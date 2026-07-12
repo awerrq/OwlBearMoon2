@@ -9,10 +9,10 @@ const BADGE_FLAG = `${ID}/badge`;
 // EDIT THIS LIST to add, remove, or change effects.
 // ---------------------------------------------------------------------
 const EFFECTS = [
-  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 5 },
-  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 3 },
-  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 3 },
-  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 3 },
+  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99 },
+  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99 },
+  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 99 },
+  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
 ];
 
 const BADGE_SCALE = 0.14; // was 0.28 — half the size, per your feedback
