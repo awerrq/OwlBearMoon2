@@ -6,8 +6,8 @@
   "description": "Tracks stacking status effects with custom icons directly on tokens",
   "action": {
     "title": "Status Effects",
-    "icon": "/icon.svg",
-    "popover": "/index.html",
+    "icon": "https://awerrq.github.io/OwlBearMoon2/icon.svg",
+    "popover": "https://awerrq.github.io/OwlBearMoon2/index.html",
     "height": 480,
     "width": 320
   }
