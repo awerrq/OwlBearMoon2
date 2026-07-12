@@ -15,7 +15,7 @@ const EFFECTS = [
   { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
 ];
 
-const BADGE_SCALE = 0.14; // was 0.28 — half the size, per your feedback
+const BADGE_SCALE = 0.07; // was 0.28 — half the size, per your feedback
 const ICON_PX = 28;
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
@@ -183,7 +183,7 @@ async function reconcileBadges(items) {
 
 function buildBadge(token, effect, count, index) {
   const badgeSize = gridDpi * BADGE_SCALE;
-  const gap = badgeSize * 0.15;
+  const gap = badgeSize * 0.25;
   const tokenWidth = token.width ?? gridDpi;
   const tokenHeight = token.height ?? gridDpi;
 
