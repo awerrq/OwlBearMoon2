@@ -1,0 +1,14 @@
+{
+  "name": "PM Status Effects",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "author": "Daniel",
+  "description": "Tracks stacking status effects with custom icons directly on tokens",
+  "action": {
+    "title": "Status Effects",
+    "icon": "/icon.svg",
+    "popover": "/index.html",
+    "height": 480,
+    "width": 320
+  }
+}
