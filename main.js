@@ -16,7 +16,7 @@ const EFFECTS = [
 ];
 
 const BADGE_SCALE = 0.07; // was 0.28 — half the size, per your feedback
-const ICON_PX = 28;
+const ICON_PX = 56;
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 let selectedTokenId = null;
