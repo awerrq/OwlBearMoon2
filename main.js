@@ -183,7 +183,7 @@ async function reconcileBadges(items) {
 
 function buildBadge(token, effect, count, index) {
   const badgeSize = gridDpi * BADGE_SCALE;
-  const gap = badgeSize * 0.25;
+  const gap = badgeSize * 0.8;
   const tokenWidth = token.width ?? gridDpi;
   const tokenHeight = token.height ?? gridDpi;
 
