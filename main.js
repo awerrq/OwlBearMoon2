@@ -6,9 +6,7 @@ const METADATA_KEY = `${ID}/effects`;
 const BADGE_FLAG = `${ID}/badge`;
 
 // ---------------------------------------------------------------------
-// EDIT THIS LIST to add, remove, or change effects. That's the only
-// place you should need to touch for normal balance/content changes.
-// "max" is the highest stack count the + button will allow.
+// EDIT THIS LIST to add, remove, or change effects.
 // ---------------------------------------------------------------------
 const EFFECTS = [
   { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 5 },
@@ -17,25 +15,38 @@ const EFFECTS = [
   { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 3 },
 ];
 
-// How big a badge is, as a fraction of one grid cell. 0.28 = a little
-// over a quarter of the token's width. Bump this up/down to taste.
-const BADGE_SCALE = 0.28;
-const ICON_PX = 28; // raw pixel size of the source SVGs, don't need to change this
+const BADGE_SCALE = 0.14; // was 0.28 — half the size, per your feedback
+const ICON_PX = 28;
+const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 let selectedTokenId = null;
-let gridDpi = 150; // sensible fallback, gets replaced with the real value below
+let gridDpi = 150;
+let authoritative = {}; // last known SYNCED counts for the selected token
+let pending = {};       // un-sent click deltas since the last flush
+let flushTimer = null;
 
 OBR.onReady(async () => {
   gridDpi = await OBR.scene.grid.getDpi();
 
   renderEffectRows();
-  await refreshSelection();
+  await loadSelectedToken();
 
   OBR.player.onChange(async () => {
-    await refreshSelection();
+    await flushNow(); // don't lose clicks if you switch tokens mid-click
+    await loadSelectedToken();
   });
 
-  OBR.scene.items.onChange(reconcileBadges);
+  OBR.scene.items.onChange(async (items) => {
+    reconcileBadges(items);
+    if (selectedTokenId) {
+      const token = items.find((i) => i.id === selectedTokenId);
+      if (token) {
+        authoritative = token.metadata[METADATA_KEY] || {};
+        updateCountDisplays();
+      }
+    }
+  });
+
   reconcileBadges(await OBR.scene.items.getItems());
 });
 
@@ -54,13 +65,13 @@ function renderEffectRows() {
     `;
     root.appendChild(row);
   }
-  root.addEventListener("click", async (e) => {
+  root.addEventListener("click", (e) => {
     if (e.target.tagName !== "BUTTON") return;
-    await changeEffect(e.target.dataset.id, parseInt(e.target.dataset.delta, 10));
+    handleClick(e.target.dataset.id, parseInt(e.target.dataset.delta, 10));
   });
 }
 
-async function refreshSelection() {
+async function loadSelectedToken() {
   const selection = await OBR.player.getSelection();
   selectedTokenId = selection && selection.length === 1 ? selection[0] : null;
 
@@ -70,42 +81,68 @@ async function refreshSelection() {
   if (!selectedTokenId) {
     banner.textContent = "Select exactly one token";
     panel.classList.add("disabled");
+    authoritative = {};
+    pending = {};
     return;
   }
 
   const [token] = await OBR.scene.items.getItems([selectedTokenId]);
-  if (!token) return;
-
   panel.classList.remove("disabled");
-  banner.textContent = token.name || "Selected token";
+  banner.textContent = (token && token.name) || "Selected token";
+  authoritative = (token && token.metadata[METADATA_KEY]) || {};
+  pending = {};
+  updateCountDisplays();
+}
 
-  const current = token.metadata[METADATA_KEY] || {};
+function updateCountDisplays() {
   for (const effect of EFFECTS) {
     const el = document.getElementById(`count-${effect.id}`);
-    if (el) el.textContent = current[effect.id] || 0;
+    if (!el) continue;
+    el.textContent = clampCount(
+      effect,
+      (authoritative[effect.id] || 0) + (pending[effect.id] || 0)
+    );
   }
 }
 
-async function changeEffect(effectId, delta) {
+function clampCount(effect, value) {
+  return Math.max(0, Math.min(effect.max, value));
+}
+
+// Instant visual feedback on click. Network sync happens separately,
+// only once clicking pauses (see flushNow).
+function handleClick(effectId, delta) {
   if (!selectedTokenId) return;
-  const def = EFFECTS.find((e) => e.id === effectId);
+  pending[effectId] = (pending[effectId] || 0) + delta;
+  updateCountDisplays();
+
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flushNow, FLUSH_DELAY_MS);
+}
+
+async function flushNow() {
+  clearTimeout(flushTimer);
+  if (!selectedTokenId || Object.keys(pending).length === 0) return;
+
+  const deltas = { ...pending };
+  pending = {};
 
   await OBR.scene.items.updateItems([selectedTokenId], (items) => {
     for (const item of items) {
       const current = item.metadata[METADATA_KEY] || {};
-      const next = Math.max(0, Math.min(def.max, (current[effectId] || 0) + delta));
-      item.metadata[METADATA_KEY] = { ...current, [effectId]: next };
+      const next = { ...current };
+      for (const [id, delta] of Object.entries(deltas)) {
+        const effect = EFFECTS.find((e) => e.id === id);
+        next[id] = clampCount(effect, (current[id] || 0) + delta);
+      }
+      item.metadata[METADATA_KEY] = next;
     }
   });
-
-  await refreshSelection();
 }
 
 // ---------------------------------------------------------------------
-// Rebuilds the little icon badges that sit above each token.
-// This only touches badges that actually need to change (added, removed,
-// or count updated) instead of wiping everything every time — that's
-// what was causing the infinite loop / disappearing effects before.
+// Rebuilds the icon badges above each token. Only touches badges that
+// actually changed, so it can't loop on itself.
 // ---------------------------------------------------------------------
 async function reconcileBadges(items) {
   const tokens = items.filter((item) => item.layer === "CHARACTER" && isImage(item));
@@ -127,17 +164,11 @@ async function reconcileBadges(items) {
       const match = existingForToken.find(
         (b) => b.metadata[BADGE_FLAG].effectId === effect.id
       );
-
-      if (match && match.metadata[BADGE_FLAG].count === count) {
-        return; // already correct on the map, don't touch it
-      }
-      if (match) {
-        toDelete.push(match.id); // stale count, will recreate below
-      }
+      if (match && match.metadata[BADGE_FLAG].count === count) return;
+      if (match) toDelete.push(match.id);
       toAdd.push(buildBadge(token, effect, count, index));
     });
 
-    // remove badges for effects that dropped to zero
     for (const badge of existingForToken) {
       const stillWanted = active.some(
         (e) => e.id === badge.metadata[BADGE_FLAG].effectId
