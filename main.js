@@ -1,5 +1,5 @@
 // Loaded straight from a CDN so there's no npm/build step required.
-import OBR, { buildImage, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@2";
+import OBR, { buildImage, buildLabel, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@2";
 
 const ID = "com.danielpm.statuseffects";
 const METADATA_KEY = `${ID}/effects`;
@@ -9,15 +9,21 @@ const BADGE_FLAG = `${ID}/badge`;
 // EDIT THIS LIST to add, remove, or change effects.
 // ---------------------------------------------------------------------
 const EFFECTS = [
-  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99 },
-  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99 },
-  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 99 },
-  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
+  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 5 },
+  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 3 },
+  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 3 },
+  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 3 },
 ];
 
-const BADGE_SCALE = 0.07; // was 0.28 — half the size, per your feedback
-const ICON_PX = 56;
+const BADGE_SCALE = 0.14; // was 0.28 — half the size, per your feedback
+const BADGE_GAP_SCALE = 0.5; // space between icons, as a fraction of icon size
+const ICON_PX = 28;
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
+
+// Background behind the stack-count number. Set opacity to 0 to remove
+// it entirely, or leave it >0 and change the color to whatever you like.
+const COUNT_BG_COLOR = "#000000";
+const COUNT_BG_OPACITY = 0; // 0 = no background at all
 
 let selectedTokenId = null;
 let gridDpi = 150;
@@ -161,12 +167,15 @@ async function reconcileBadges(items) {
 
     active.forEach((effect, index) => {
       const count = state[effect.id];
-      const match = existingForToken.find(
+      // Each active effect is TWO items on the map now: the icon and its
+      // count label, so they need to be checked/replaced as a pair.
+      const parts = existingForToken.filter(
         (b) => b.metadata[BADGE_FLAG].effectId === effect.id
       );
-      if (match && match.metadata[BADGE_FLAG].count === count) return;
-      if (match) toDelete.push(match.id);
-      toAdd.push(buildBadge(token, effect, count, index));
+      const upToDate = parts.length === 2 && parts.every((p) => p.metadata[BADGE_FLAG].count === count);
+      if (upToDate) return;
+      toDelete.push(...parts.map((p) => p.id));
+      toAdd.push(...buildBadgePair(token, effect, count, index));
     });
 
     for (const badge of existingForToken) {
@@ -181,13 +190,16 @@ async function reconcileBadges(items) {
   if (toAdd.length) await OBR.scene.items.addItems(toAdd);
 }
 
-function buildBadge(token, effect, count, index) {
+function buildBadgePair(token, effect, count, index) {
   const badgeSize = gridDpi * BADGE_SCALE;
-  const gap = badgeSize * 2;
+  const gap = badgeSize * BADGE_GAP_SCALE;
   const tokenWidth = token.width ?? gridDpi;
   const tokenHeight = token.height ?? gridDpi;
 
-  return buildImage(
+  const x = token.position.x - tokenWidth / 2 + index * (badgeSize + gap) + badgeSize / 2;
+  const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - gap;
+
+  const icon = buildImage(
     {
       width: ICON_PX,
       height: ICON_PX,
@@ -197,12 +209,24 @@ function buildBadge(token, effect, count, index) {
     { dpi: ICON_PX / BADGE_SCALE, offset: { x: ICON_PX / 2, y: ICON_PX / 2 } }
   )
     .attachedTo(token.id)
-    .position({
-      x: token.position.x - tokenWidth / 2 + index * (badgeSize + gap) + badgeSize / 2,
-      y: token.position.y - tokenHeight / 2 - badgeSize / 2 - gap,
-    })
-    .plainText(String(count))
+    .position({ x, y })
     .locked(true)
-    .metadata({ [BADGE_FLAG]: { effectId: effect.id, count } })
+    .disableHit(true)
+    .metadata({ [BADGE_FLAG]: { effectId: effect.id, count, part: "icon" } })
     .build();
+
+  // Separate item just for the number, so its background is fully
+  // controllable instead of relying on the image's built-in text style.
+  const label = buildLabel()
+    .plainText(String(count))
+    .attachedTo(token.id)
+    .position({ x: x + badgeSize * 0.32, y: y + badgeSize * 0.32 })
+    .backgroundColor(COUNT_BG_COLOR)
+    .backgroundOpacity(COUNT_BG_OPACITY)
+    .locked(true)
+    .disableHit(true)
+    .metadata({ [BADGE_FLAG]: { effectId: effect.id, count, part: "count" } })
+    .build();
+
+  return [icon, label];
 }
