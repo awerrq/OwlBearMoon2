@@ -9,13 +9,13 @@ const BADGE_FLAG = `${ID}/badge`;
 // EDIT THIS LIST to add, remove, or change effects.
 // ---------------------------------------------------------------------
 const EFFECTS = [
-  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99 },
-  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99 },
-  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 99 },
-  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
+  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 5 },
+  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 3 },
+  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 3 },
+  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 3 },
 ];
 
-const BADGE_SCALE = 0.07;
+const BADGE_SCALE = 0.14;
 const BADGE_GAP_SCALE = 1.0; // was 0.5 — doubled, gap now equals a full icon width
 const ICON_PX = 28;
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
@@ -206,7 +206,7 @@ function buildBadgePair(token, effect, count, index) {
       url: new URL(effect.icon, window.location.href).href,
       mime: "image/svg+xml",
     },
-    { dpi: ICON_PX / BADGE_SCALE, offset: { x: ICON_PX, y: ICON_PX } }
+    { dpi: ICON_PX / BADGE_SCALE, offset: { x: ICON_PX / 2, y: ICON_PX / 2 } }
   )
     .attachedTo(token.id)
     .position({ x, y })
