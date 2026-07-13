@@ -16,7 +16,7 @@ const EFFECTS = [
 ];
 
 const BADGE_SCALE = 0.07;
-const BADGE_GAP_SCALE = 1.0; // was 0.5 — doubled, gap now equals a full icon width
+const BADGE_GAP_SCALE = 30.0; // was 0.5 — doubled, gap now equals a full icon width
 const ICON_PX = 28;
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
