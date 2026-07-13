@@ -16,7 +16,7 @@ const EFFECTS = [
 ];
 
 const BADGE_SCALE = 0.07;
-const BADGE_GAP_SCALE = 30.0; // was 0.5 — doubled, gap now equals a full icon width
+const BADGE_GAP_SCALE = 1.0; // was 0.5 — doubled, gap now equals a full icon width
 const ICON_PX = 28;
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
@@ -206,7 +206,7 @@ function buildBadgePair(token, effect, count, index) {
       url: new URL(effect.icon, window.location.href).href,
       mime: "image/svg+xml",
     },
-    { dpi: ICON_PX / BADGE_SCALE, offset: { x: ICON_PX / 2, y: ICON_PX / 2 } }
+    { dpi: ICON_PX / BADGE_SCALE, offset: { x: ICON_PX, y: ICON_PX } }
   )
     .attachedTo(token.id)
     .position({ x, y })
