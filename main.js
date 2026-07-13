@@ -1,5 +1,5 @@
 // Loaded straight from a CDN so there's no npm/build step required.
-import OBR, { buildImage, buildLabel, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@2";
+import OBR, { buildImage, buildText, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@2";
 
 const ID = "com.danielpm.statuseffects";
 const METADATA_KEY = `${ID}/effects`;
@@ -9,21 +9,21 @@ const BADGE_FLAG = `${ID}/badge`;
 // EDIT THIS LIST to add, remove, or change effects.
 // ---------------------------------------------------------------------
 const EFFECTS = [
-  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99 },
-  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99 },
-  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 99 },
-  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
+  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 5 },
+  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 3 },
+  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 3 },
+  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 3 },
 ];
 
-const BADGE_SCALE = 0.07; // was 0.28 — half the size, per your feedback
-const BADGE_GAP_SCALE = 0.5; // space between icons, as a fraction of icon size
+const BADGE_SCALE = 0.14;
+const BADGE_GAP_SCALE = 1.0; // was 0.5 — doubled, gap now equals a full icon width
 const ICON_PX = 28;
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
-// Background behind the stack-count number. Set opacity to 0 to remove
-// it entirely, or leave it >0 and change the color to whatever you like.
-const COUNT_BG_COLOR = "#000000";
-const COUNT_BG_OPACITY = 0; // 0 = no background at all
+// Styling for the stack-count number. This is a plain Text item, not a
+// Label/image-caption — those two ignore zoom by design, a Text item
+// scales with the map like everything else, which is what we want here.
+const COUNT_FONT_COLOR = "#ffffff";
 
 let selectedTokenId = null;
 let gridDpi = 150;
@@ -215,14 +215,15 @@ function buildBadgePair(token, effect, count, index) {
     .metadata({ [BADGE_FLAG]: { effectId: effect.id, count, part: "icon" } })
     .build();
 
-  // Separate item just for the number, so its background is fully
-  // controllable instead of relying on the image's built-in text style.
-  const label = buildLabel()
+  // Separate item just for the number, drawn as plain Text (not a
+  // Label/image-caption) so it scales with the map instead of staying
+  // a fixed screen size as you zoom.
+  const label = buildText()
     .plainText(String(count))
     .attachedTo(token.id)
     .position({ x: x + badgeSize * 0.32, y: y + badgeSize * 0.32 })
-    .backgroundColor(COUNT_BG_COLOR)
-    .backgroundOpacity(COUNT_BG_OPACITY)
+    .fontSize(gridDpi * 0.09)
+    .fillColor(COUNT_FONT_COLOR)
     .locked(true)
     .disableHit(true)
     .metadata({ [BADGE_FLAG]: { effectId: effect.id, count, part: "count" } })
