@@ -16,9 +16,9 @@ const EFFECTS = [
 ];
 
 const BADGE_SCALE = 0.14;
-const BADGE_GAP_SCALE = 0.6; // horizontal space BETWEEN separate effects
+const BADGE_GAP_SCALE = 0.8; // horizontal space BETWEEN separate effects
 const ROW_HEIGHT_SCALE = 0.2; // was 0.65 — wasn't enough to clear the token
-const ICON_PX = 112; // MUST match your actual icon file dimensions (yours are 128x128)
+const ICON_PX = 80; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 // Styling for the stack-count number. This is a plain Text item, not a
