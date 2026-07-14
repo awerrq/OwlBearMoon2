@@ -15,8 +15,8 @@ const EFFECTS = [
   { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 3 },
 ];
 
-const BADGE_SCALE = 0.08;
-const BADGE_GAP_SCALE = 0.2; // was 0.5 — doubled, gap now equals a full icon width
+const BADGE_SCALE = 0.14;
+const BADGE_GAP_SCALE = 1.0; // was 0.5 — doubled, gap now equals a full icon width
 const ICON_PX = 128; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
@@ -243,8 +243,21 @@ function buildBadgePair(token, effect, count, index) {
   // Separate item just for the number, drawn as plain Text (not a
   // Label/image-caption) so it scales with the map instead of staying
   // a fixed screen size as you zoom.
+  // NOTE: uses richText, not plainText — Text items appear to need
+  // richText to actually render; plainText alone produced no visible
+  // output despite building/adding without any error.
+  const textBoxSize = badgeSize * 1.4;
   const label = buildText()
-    .plainText(String(count))
+    .richText([
+      {
+        type: "paragraph",
+        children: [{ text: String(count) }],
+      },
+    ])
+    .width(textBoxSize)
+    .height(textBoxSize)
+    .textAlign("CENTER")
+    .textAlignVertical("MIDDLE")
     .attachedTo(token.id)
     .position({ x: x + badgeSize * 0.32, y: y + badgeSize * 0.32 })
     .fontSize(gridDpi * 0.09)
