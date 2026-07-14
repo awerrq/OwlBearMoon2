@@ -17,7 +17,7 @@ const EFFECTS = [
 
 const BADGE_SCALE = 0.14;
 const BADGE_GAP_SCALE = 1.0; // was 0.5 — doubled, gap now equals a full icon width
-const ICON_PX = 28;
+const ICON_PX = 128; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 // Styling for the stack-count number. This is a plain Text item, not a
@@ -31,6 +31,31 @@ let authoritative = {}; // last known SYNCED counts for the selected token
 let pending = {};       // un-sent click deltas since the last flush
 let flushTimer = null;
 
+let reconcileBusy = false;
+let reconcileQueued = false;
+
+// Wrapper that guarantees only one reconcileBadges run is ever in flight.
+// Without this, a scene update could trigger a second run before the
+// first one's add/delete calls had actually finished, causing both runs
+// to add duplicate badges — which is what was hammering the rate limit
+// and making effects disappear.
+async function scheduleReconcile(items) {
+  if (reconcileBusy) {
+    reconcileQueued = true;
+    return;
+  }
+  reconcileBusy = true;
+  try {
+    await reconcileBadges(items);
+  } finally {
+    reconcileBusy = false;
+    if (reconcileQueued) {
+      reconcileQueued = false;
+      scheduleReconcile(await OBR.scene.items.getItems());
+    }
+  }
+}
+
 OBR.onReady(async () => {
   gridDpi = await OBR.scene.grid.getDpi();
 
@@ -43,7 +68,7 @@ OBR.onReady(async () => {
   });
 
   OBR.scene.items.onChange(async (items) => {
-    reconcileBadges(items);
+    scheduleReconcile(items);
     if (selectedTokenId) {
       const token = items.find((i) => i.id === selectedTokenId);
       if (token) {
@@ -53,7 +78,7 @@ OBR.onReady(async () => {
     }
   });
 
-  reconcileBadges(await OBR.scene.items.getItems());
+  scheduleReconcile(await OBR.scene.items.getItems());
 });
 
 function renderEffectRows() {
