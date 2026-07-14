@@ -15,7 +15,7 @@ const EFFECTS = [
   { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 3 },
 ];
 
-const BADGE_SCALE = 0.03;
+const BADGE_SCALE = 0.08;
 const BADGE_GAP_SCALE = 0.2; // was 0.5 — doubled, gap now equals a full icon width
 const ICON_PX = 128; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
