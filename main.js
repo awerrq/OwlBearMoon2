@@ -16,7 +16,8 @@ const EFFECTS = [
 ];
 
 const BADGE_SCALE = 0.14;
-const BADGE_GAP_SCALE = 0.5; // was 0.5 — doubled, gap now equals a full icon width
+const BADGE_GAP_SCALE = 1.0; // horizontal space BETWEEN icons
+const VERTICAL_GAP_SCALE = 0.15; // vertical space ABOVE the token — separate from the above
 const ICON_PX = 128; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
@@ -222,7 +223,7 @@ function buildBadgePair(token, effect, count, index) {
   const tokenHeight = token.height ?? gridDpi;
 
   const x = token.position.x - tokenWidth / 2 + index * (badgeSize + gap) + badgeSize / 2;
-  const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - gap;
+  const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - badgeSize * VERTICAL_GAP_SCALE;
 
   const icon = buildImage(
     {
