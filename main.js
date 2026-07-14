@@ -15,9 +15,9 @@ const EFFECTS = [
   { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
 ];
 
-const BADGE_SCALE = 0.14;
-const BADGE_GAP_SCALE = 0.5; // horizontal space BETWEEN separate effects
-const ROW_HEIGHT_SCALE = 1.3; // was 0.65 — wasn't enough to clear the token
+const BADGE_SCALE = 0.28;
+const BADGE_GAP_SCALE = 1.0; // horizontal space BETWEEN separate effects
+const ROW_HEIGHT_SCALE = 0.8; // was 0.65 — wasn't enough to clear the token
 const ICON_PX = 128; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
