@@ -15,10 +15,10 @@ const EFFECTS = [
   { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
 ];
 
-const BADGE_SCALE = 0.28;
+const BADGE_SCALE = 0.14;
 const BADGE_GAP_SCALE = 0.2; // horizontal space BETWEEN separate effects
 const ROW_HEIGHT_SCALE = 0.2; // was 0.65 — wasn't enough to clear the token
-const ICON_PX = 64; // MUST match your actual icon file dimensions (yours are 128x128)
+const ICON_PX = 96; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 // Styling for the stack-count number. This is a plain Text item, not a
