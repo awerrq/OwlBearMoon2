@@ -16,8 +16,8 @@ const EFFECTS = [
 ];
 
 const BADGE_SCALE = 0.14;
-const BADGE_GAP_SCALE = 1.0; // horizontal space BETWEEN icons
-const VERTICAL_GAP_SCALE = 0.15; // vertical space ABOVE the token — separate from the above
+const BADGE_GAP_SCALE = 1.0; // horizontal space BETWEEN separate effects
+const ROW_HEIGHT_SCALE = 1.3; // was 0.65 — wasn't enough to clear the token
 const ICON_PX = 128; // MUST match your actual icon file dimensions (yours are 128x128)
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
@@ -223,7 +223,10 @@ function buildBadgePair(token, effect, count, index) {
   const tokenHeight = token.height ?? gridDpi;
 
   const x = token.position.x - tokenWidth / 2 + index * (badgeSize + gap) + badgeSize / 2;
-  const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - badgeSize * VERTICAL_GAP_SCALE;
+  // Icon and number now share this exact row — no vertical offset between
+  // them — tuned to roughly match where the numbers sat in your last
+  // screenshot, which is the position you actually wanted kept.
+  const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - badgeSize * ROW_HEIGHT_SCALE;
 
   const icon = buildImage(
     {
@@ -260,7 +263,7 @@ function buildBadgePair(token, effect, count, index) {
     .textAlign("CENTER")
     .textAlignVertical("MIDDLE")
     .attachedTo(token.id)
-    .position({ x: x + badgeSize * 0.32, y: y + badgeSize * 0.32 })
+    .position({ x: x + badgeSize * 0.65, y })
     .fontSize(gridDpi * 0.09)
     .fillColor(COUNT_FONT_COLOR)
     .locked(true)
