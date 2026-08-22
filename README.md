@@ -1,25 +1,20 @@
 # PM Status Effects — Owlbear Rodeo Extension
 
 ## What's new in this update
-- **Timing per effect**: each effect in `EFFECTS` now has `timing:
-  "immediate"` (applies the moment you click it — Burn) or `timing:
-  "delayed"` (queues as pending, only activates on End Turn — Haste,
-  Power Down, Fragile).
-- **Per-effect decay**: `decay: "halve"` (rounds down), `"clear"`, or
-  `"none"` — controls what happens to the ACTIVE amount every time End
-  Turn is pressed.
-- **End Turn button**: global — affects every character token on the
-  map, not just the selected one(s). On each press: decays active
-  effects first, then promotes pending into active. That order matters
-  — it's why a freshly-promoted effect survives until the *next* End
-  Turn instead of being wiped by the same press that activated it.
-- **Badge display**: one slot per effect, not per state. Active shows
-  in white. Pending-only shows in muted gray (originally tried true
-  transparency via `.opacity()`, but that method doesn't actually exist
-  on Owlbear's Image/Text builders — confirmed by checking every
-  builder reference — which is why nothing was rendering at all before
-  this fix). If an effect has both active and pending, you get a solid
-  white main number plus a smaller gray "+N" next to it.
+- **Fixed a real positioning bug**: badges were slotted by fixed catalog
+  order, and an existing badge never got told to move when a new effect
+  pushed it over — that's why Burn was landing on top of Haste. Fixed by
+  tracking a stable "order" per effect on the token itself, assigned the
+  first time it becomes shown and cleared when it fully drops to zero —
+  so a slot is claimed once and stays put, new effects append at the end.
+- **Icon dimming for pending-only effects**: images can't have opacity
+  (confirmed, not available on any builder), so this uses a semi-
+  transparent dark rectangle drawn over the icon instead, via Shape's
+  `fillOpacity` — a real, confirmed property. This is new and unverified
+  in practice — if the overlay looks wrong (wrong position, wrong
+  layering, or just not there), tell me exactly what you see.
+- **Numbers moved closer to their icons** — was `badgeSize * 0.65` from
+  the icon's position, now `0.45`. Tune further if still not right.
 
 ## Not done yet
 HP/damage integration with a health-bar extension (e.g. Bubbles) is a

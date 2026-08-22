@@ -1,5 +1,5 @@
 // Loaded straight from a CDN so there's no npm/build step required.
-import OBR, { buildImage, buildText, buildShape, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
+import OBR, { buildImage, buildText, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
 
 const ID = "com.danielpm.statuseffects";
 const METADATA_KEY = `${ID}/effects`;
@@ -28,8 +28,6 @@ const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 const COUNT_FONT_COLOR = "#ffffff"; // active
 const PENDING_FONT_COLOR = "#8a8f9c"; // pending-only — muted instead of translucent
-const DIM_OVERLAY_COLOR = "#000000"; // darkens a pending-only icon
-const DIM_OVERLAY_OPACITY = 0.55;
 
 let selectedTokenIds = []; // a list, not a single id — multi-select
 let gridDpi = 150;
@@ -64,6 +62,7 @@ OBR.onReady(async () => {
   renderEffectRows();
   document.getElementById("reset-btn").addEventListener("click", handleReset);
   document.getElementById("end-turn-btn").addEventListener("click", handleEndTurn);
+  document.getElementById("debug-btn").addEventListener("click", handleDebugPrint);
   await loadSelection();
 
   OBR.player.onChange(async () => {
@@ -223,6 +222,20 @@ async function flushNow() {
   });
 }
 
+// TEMPORARY — remove once the HP integration is built and confirmed.
+// Prints every metadata key on the selected token(s) to the console so
+// we can find exactly what another extension (e.g. Bubbles) is storing.
+async function handleDebugPrint() {
+  if (selectedTokenIds.length === 0) {
+    console.log("[debug] no token selected");
+    return;
+  }
+  const items = await OBR.scene.items.getItems(selectedTokenIds);
+  for (const item of items) {
+    console.log(`[debug] "${item.name}" (${item.id}) metadata:`, item.metadata);
+  }
+}
+
 async function handleReset() {
   if (selectedTokenIds.length === 0) return;
   clearTimeout(flushTimer);
@@ -307,8 +320,7 @@ async function reconcileBadges(items) {
       const active = s.active || 0;
       const pend = s.pending || 0;
       const showSecondary = active > 0 && pend > 0;
-      const showDim = active === 0 && pend > 0;
-      const expectedParts = 2 + (showSecondary || showDim ? 1 : 0);
+      const expectedParts = 2 + (showSecondary ? 1 : 0);
 
       const parts = existingForToken.filter(
         (b) => b.metadata[BADGE_FLAG].effectId === effect.id
@@ -350,7 +362,6 @@ function buildBadgeGroup(token, effect, state, index) {
   const hasActive = active > 0;
   const mainCount = hasActive ? active : pending; // pending-only shows in muted color
   const showSecondary = hasActive && pending > 0;
-  const showDim = !hasActive && pending > 0; // pending-only — dim the icon
 
   const items = [];
 
@@ -370,26 +381,6 @@ function buildBadgeGroup(token, effect, state, index) {
     .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, index, part: "icon" } })
     .build();
   items.push(icon);
-
-  // Images can't have opacity, so a pending-only icon gets a semi-
-  // transparent dark rectangle drawn over it instead — an approximation
-  // of "faded," using Shape's fillOpacity, which IS a real property.
-  if (showDim) {
-    const dim = buildShape()
-      .shapeType("RECTANGLE")
-      .width(badgeSize)
-      .height(badgeSize)
-      .position({ x: x - badgeSize / 2, y: y - badgeSize / 2 })
-      .fillColor(DIM_OVERLAY_COLOR)
-      .fillOpacity(DIM_OVERLAY_OPACITY)
-      .strokeOpacity(0)
-      .attachedTo(token.id)
-      .locked(true)
-      .disableHit(true)
-      .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, index, part: "dim" } })
-      .build();
-    items.push(dim);
-  }
 
   const textBoxSize = badgeSize * 1.4;
   const mainLabel = buildText()
