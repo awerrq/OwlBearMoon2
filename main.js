@@ -18,7 +18,7 @@ const EFFECTS = [
 const BADGE_SCALE = 0.14;
 const BADGE_GAP_SCALE = 0.8; // horizontal space BETWEEN separate effects
 const ROW_HEIGHT_SCALE = 0.2; // was 0.65 — wasn't enough to clear the token
-const ICON_PX = 80; // MUST match your actual icon file dimensions (yours are 128x128)
+const ICON_PX = 80; // MUST match your actual icon file dimensions
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 // Styling for the stack-count number. This is a plain Text item, not a
@@ -26,9 +26,9 @@ const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 // scales with the map like everything else, which is what we want here.
 const COUNT_FONT_COLOR = "#ffffff";
 
-let selectedTokenId = null;
+let selectedTokenIds = []; // now a list, not a single id — multi-select
 let gridDpi = 150;
-let authoritative = {}; // last known SYNCED counts for the selected token
+let authoritative = {}; // only meaningful when exactly ONE token is selected
 let pending = {};       // un-sent click deltas since the last flush
 let flushTimer = null;
 
@@ -61,17 +61,20 @@ OBR.onReady(async () => {
   gridDpi = await OBR.scene.grid.getDpi();
 
   renderEffectRows();
-  await loadSelectedToken();
+  document.getElementById("reset-btn").addEventListener("click", handleReset);
+  await loadSelection();
 
   OBR.player.onChange(async () => {
     await flushNow(); // don't lose clicks if you switch tokens mid-click
-    await loadSelectedToken();
+    await loadSelection();
   });
 
   OBR.scene.items.onChange(async (items) => {
     scheduleReconcile(items);
-    if (selectedTokenId) {
-      const token = items.find((i) => i.id === selectedTokenId);
+    // Only track a live "authoritative" number for a single selection —
+    // with multiple tokens there's no one shared number to show.
+    if (selectedTokenIds.length === 1) {
+      const token = items.find((i) => i.id === selectedTokenIds[0]);
       if (token) {
         authoritative = token.metadata[METADATA_KEY] || {};
         updateCountDisplays();
@@ -103,30 +106,44 @@ function renderEffectRows() {
   });
 }
 
-async function loadSelectedToken() {
+async function loadSelection() {
   const selection = await OBR.player.getSelection();
-  selectedTokenId = selection && selection.length === 1 ? selection[0] : null;
+  selectedTokenIds = selection || [];
 
   const banner = document.getElementById("banner");
   const panel = document.getElementById("effects");
+  const resetBtn = document.getElementById("reset-btn");
 
-  if (!selectedTokenId) {
-    banner.textContent = "Select exactly one token";
+  if (selectedTokenIds.length === 0) {
+    banner.textContent = "Select one or more tokens";
     panel.classList.add("disabled");
+    resetBtn.disabled = true;
     authoritative = {};
     pending = {};
+    updateCountDisplays();
     return;
   }
 
-  const [token] = await OBR.scene.items.getItems([selectedTokenId]);
   panel.classList.remove("disabled");
-  banner.textContent = (token && token.name) || "Selected token";
-  authoritative = (token && token.metadata[METADATA_KEY]) || {};
+  resetBtn.disabled = false;
+
+  if (selectedTokenIds.length === 1) {
+    const [token] = await OBR.scene.items.getItems(selectedTokenIds);
+    banner.textContent = (token && token.name) || "Selected token";
+    authoritative = (token && token.metadata[METADATA_KEY]) || {};
+  } else {
+    banner.textContent = `${selectedTokenIds.length} tokens selected`;
+    authoritative = {};
+  }
   pending = {};
   updateCountDisplays();
 }
 
 function updateCountDisplays() {
+  const isMulti = selectedTokenIds.length > 1;
+  document.getElementById("effects").classList.toggle("multi-select", isMulti);
+  if (isMulti) return; // no single shared number to show
+
   for (const effect of EFFECTS) {
     const el = document.getElementById(`count-${effect.id}`);
     if (!el) continue;
@@ -142,9 +159,10 @@ function clampCount(effect, value) {
 }
 
 // Instant visual feedback on click. Network sync happens separately,
-// only once clicking pauses (see flushNow).
+// only once clicking pauses (see flushNow). Same logic whether 1 or
+// many tokens are selected — the delta applies to each independently.
 function handleClick(effectId, delta) {
-  if (!selectedTokenId) return;
+  if (selectedTokenIds.length === 0) return;
   pending[effectId] = (pending[effectId] || 0) + delta;
   updateCountDisplays();
 
@@ -154,12 +172,14 @@ function handleClick(effectId, delta) {
 
 async function flushNow() {
   clearTimeout(flushTimer);
-  if (!selectedTokenId || Object.keys(pending).length === 0) return;
+  if (selectedTokenIds.length === 0 || Object.keys(pending).length === 0) return;
 
   const deltas = { ...pending };
   pending = {};
 
-  await OBR.scene.items.updateItems([selectedTokenId], (items) => {
+  // updateItems hands us every selected item — each gets the SAME delta
+  // applied to its OWN current value, independently of the others.
+  await OBR.scene.items.updateItems(selectedTokenIds, (items) => {
     for (const item of items) {
       const current = item.metadata[METADATA_KEY] || {};
       const next = { ...current };
@@ -170,6 +190,21 @@ async function flushNow() {
       item.metadata[METADATA_KEY] = next;
     }
   });
+}
+
+async function handleReset() {
+  if (selectedTokenIds.length === 0) return;
+  clearTimeout(flushTimer);
+  pending = {};
+
+  await OBR.scene.items.updateItems(selectedTokenIds, (items) => {
+    for (const item of items) {
+      item.metadata[METADATA_KEY] = {};
+    }
+  });
+
+  if (selectedTokenIds.length === 1) authoritative = {};
+  updateCountDisplays();
 }
 
 // ---------------------------------------------------------------------
@@ -193,7 +228,7 @@ async function reconcileBadges(items) {
 
     active.forEach((effect, index) => {
       const count = state[effect.id];
-      // Each active effect is TWO items on the map now: the icon and its
+      // Each active effect is TWO items on the map: the icon and its
       // count label, so they need to be checked/replaced as a pair.
       const parts = existingForToken.filter(
         (b) => b.metadata[BADGE_FLAG].effectId === effect.id
@@ -223,9 +258,7 @@ function buildBadgePair(token, effect, count, index) {
   const tokenHeight = token.height ?? gridDpi;
 
   const x = token.position.x - tokenWidth / 2 + index * (badgeSize + gap) + badgeSize / 2;
-  // Icon and number now share this exact row — no vertical offset between
-  // them — tuned to roughly match where the numbers sat in your last
-  // screenshot, which is the position you actually wanted kept.
+  // Icon and number share this exact row — no vertical offset between them.
   const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - badgeSize * ROW_HEIGHT_SCALE;
 
   const icon = buildImage(
@@ -246,10 +279,8 @@ function buildBadgePair(token, effect, count, index) {
 
   // Separate item just for the number, drawn as plain Text (not a
   // Label/image-caption) so it scales with the map instead of staying
-  // a fixed screen size as you zoom.
-  // NOTE: uses richText, not plainText — Text items appear to need
-  // richText to actually render; plainText alone produced no visible
-  // output despite building/adding without any error.
+  // a fixed screen size as you zoom. Uses richText, not plainText —
+  // plainText alone produced no visible output.
   const textBoxSize = badgeSize * 1.4;
   const label = buildText()
     .richText([

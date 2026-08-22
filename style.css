@@ -12,6 +12,25 @@ body {
   border-bottom: 1px solid #333;
   font-weight: 600;
 }
+#reset-btn {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 8px;
+  padding: 8px;
+  background: #6b2b2b;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#reset-btn:hover:not(:disabled) {
+  background: #833636;
+}
+#reset-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 #effects {
   padding: 8px;
 }
@@ -51,4 +70,9 @@ body {
   width: 20px;
   text-align: center;
   font-weight: 700;
+}
+/* Hide the specific number when multiple tokens (with possibly
+   different counts) are selected — just "- +" remains. */
+#effects.multi-select .effect-count {
+  display: none;
 }
