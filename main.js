@@ -25,9 +25,9 @@ const BADGE_GAP_SCALE = 0.8; // horizontal space BETWEEN separate effects
 const ROW_HEIGHT_SCALE = 0.2;
 const ICON_PX = 80; // MUST match your actual icon file dimensions
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
-const PENDING_OPACITY = 0.4; // how translucent a pending-only badge looks
 
-const COUNT_FONT_COLOR = "#ffffff";
+const COUNT_FONT_COLOR = "#ffffff"; // active
+const PENDING_FONT_COLOR = "#8a8f9c"; // pending-only — muted instead of translucent
 
 let selectedTokenIds = []; // a list, not a single id — multi-select
 let gridDpi = 150;
@@ -313,8 +313,7 @@ function buildBadgeGroup(token, effect, state, index) {
   const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - badgeSize * ROW_HEIGHT_SCALE;
 
   const hasActive = active > 0;
-  const mainCount = hasActive ? active : pending; // pending-only shows translucent
-  const mainOpacity = hasActive ? 1 : PENDING_OPACITY;
+  const mainCount = hasActive ? active : pending; // pending-only shows in muted color
   const showSecondary = hasActive && pending > 0;
 
   const items = [];
@@ -330,7 +329,6 @@ function buildBadgeGroup(token, effect, state, index) {
   )
     .attachedTo(token.id)
     .position({ x, y })
-    .opacity(mainOpacity) // UNVERIFIED — see README note
     .locked(true)
     .disableHit(true)
     .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "icon" } })
@@ -347,8 +345,7 @@ function buildBadgeGroup(token, effect, state, index) {
     .attachedTo(token.id)
     .position({ x: x + badgeSize * 0.65, y })
     .fontSize(gridDpi * 0.09)
-    .fillColor(COUNT_FONT_COLOR)
-    .opacity(mainOpacity) // UNVERIFIED — see README note
+    .fillColor(hasActive ? COUNT_FONT_COLOR : PENDING_FONT_COLOR)
     .locked(true)
     .disableHit(true)
     .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "count" } })
@@ -365,8 +362,7 @@ function buildBadgeGroup(token, effect, state, index) {
       .attachedTo(token.id)
       .position({ x: x + badgeSize * 1.15, y: y + badgeSize * 0.35 })
       .fontSize(gridDpi * 0.06)
-      .fillColor(COUNT_FONT_COLOR)
-      .opacity(PENDING_OPACITY) // UNVERIFIED — see README note
+      .fillColor(PENDING_FONT_COLOR)
       .locked(true)
       .disableHit(true)
       .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "pendingCount" } })
