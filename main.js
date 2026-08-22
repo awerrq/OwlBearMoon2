@@ -7,39 +7,38 @@ const BADGE_FLAG = `${ID}/badge`;
 
 // ---------------------------------------------------------------------
 // EDIT THIS LIST to add, remove, or change effects.
+// timing: "immediate" applies the moment you click it (like Burn).
+//         "delayed" queues as pending and only activates on End Turn.
+// decay:  what happens to the ACTIVE amount every time End Turn is
+//         pressed. "halve" rounds down, "clear" zeroes it, "none"
+//         leaves it untouched.
 // ---------------------------------------------------------------------
 const EFFECTS = [
-  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99 },
-  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99 },
-  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 99 },
-  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99 },
+  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99, timing: "immediate", decay: "halve" },
+  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99, timing: "delayed", decay: "clear" },
+  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 99, timing: "delayed", decay: "clear" },
+  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99, timing: "delayed", decay: "clear" },
 ];
 
 const BADGE_SCALE = 0.14;
 const BADGE_GAP_SCALE = 0.8; // horizontal space BETWEEN separate effects
-const ROW_HEIGHT_SCALE = 0.2; // was 0.65 — wasn't enough to clear the token
+const ROW_HEIGHT_SCALE = 0.2;
 const ICON_PX = 80; // MUST match your actual icon file dimensions
 const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
+const PENDING_OPACITY = 0.4; // how translucent a pending-only badge looks
 
-// Styling for the stack-count number. This is a plain Text item, not a
-// Label/image-caption — those two ignore zoom by design, a Text item
-// scales with the map like everything else, which is what we want here.
 const COUNT_FONT_COLOR = "#ffffff";
 
-let selectedTokenIds = []; // now a list, not a single id — multi-select
+let selectedTokenIds = []; // a list, not a single id — multi-select
 let gridDpi = 150;
-let authoritative = {}; // only meaningful when exactly ONE token is selected
-let pending = {};       // un-sent click deltas since the last flush
+let authoritative = {}; // { effectId: {active, pending} } — only meaningful for a single selection
+let pendingDeltas = {}; // un-sent click deltas since the last flush, keyed "effectId:field"
 let flushTimer = null;
 
 let reconcileBusy = false;
 let reconcileQueued = false;
 
 // Wrapper that guarantees only one reconcileBadges run is ever in flight.
-// Without this, a scene update could trigger a second run before the
-// first one's add/delete calls had actually finished, causing both runs
-// to add duplicate badges — which is what was hammering the rate limit
-// and making effects disappear.
 async function scheduleReconcile(items) {
   if (reconcileBusy) {
     reconcileQueued = true;
@@ -62,17 +61,16 @@ OBR.onReady(async () => {
 
   renderEffectRows();
   document.getElementById("reset-btn").addEventListener("click", handleReset);
+  document.getElementById("end-turn-btn").addEventListener("click", handleEndTurn);
   await loadSelection();
 
   OBR.player.onChange(async () => {
-    await flushNow(); // don't lose clicks if you switch tokens mid-click
+    await flushNow();
     await loadSelection();
   });
 
   OBR.scene.items.onChange(async (items) => {
     scheduleReconcile(items);
-    // Only track a live "authoritative" number for a single selection —
-    // with multiple tokens there's no one shared number to show.
     if (selectedTokenIds.length === 1) {
       const token = items.find((i) => i.id === selectedTokenIds[0]);
       if (token) {
@@ -91,9 +89,10 @@ function renderEffectRows() {
   for (const effect of EFFECTS) {
     const row = document.createElement("div");
     row.className = "effect-row";
+    const hint = effect.timing === "delayed" ? ` <span class="next-turn">(next turn)</span>` : "";
     row.innerHTML = `
       <img class="effect-icon" src="${effect.icon}" alt="" />
-      <span class="effect-name">${effect.name}</span>
+      <span class="effect-name">${effect.name}${hint}</span>
       <button data-id="${effect.id}" data-delta="-1">-</button>
       <span class="effect-count" id="count-${effect.id}">0</span>
       <button data-id="${effect.id}" data-delta="1">+</button>
@@ -119,7 +118,7 @@ async function loadSelection() {
     panel.classList.add("disabled");
     resetBtn.disabled = true;
     authoritative = {};
-    pending = {};
+    pendingDeltas = {};
     updateCountDisplays();
     return;
   }
@@ -135,8 +134,14 @@ async function loadSelection() {
     banner.textContent = `${selectedTokenIds.length} tokens selected`;
     authoritative = {};
   }
-  pending = {};
+  pendingDeltas = {};
   updateCountDisplays();
+}
+
+// Each effect edits ONE field depending on its timing: immediate effects
+// edit "active" directly, delayed effects always edit "pending".
+function fieldFor(effect) {
+  return effect.timing === "delayed" ? "pending" : "active";
 }
 
 function updateCountDisplays() {
@@ -145,12 +150,11 @@ function updateCountDisplays() {
   if (isMulti) return; // no single shared number to show
 
   for (const effect of EFFECTS) {
+    const field = fieldFor(effect);
+    const base = (authoritative[effect.id] || {})[field] || 0;
+    const delta = pendingDeltas[`${effect.id}:${field}`] || 0;
     const el = document.getElementById(`count-${effect.id}`);
-    if (!el) continue;
-    el.textContent = clampCount(
-      effect,
-      (authoritative[effect.id] || 0) + (pending[effect.id] || 0)
-    );
+    if (el) el.textContent = clampCount(effect, base + delta);
   }
 }
 
@@ -158,12 +162,11 @@ function clampCount(effect, value) {
   return Math.max(0, Math.min(effect.max, value));
 }
 
-// Instant visual feedback on click. Network sync happens separately,
-// only once clicking pauses (see flushNow). Same logic whether 1 or
-// many tokens are selected — the delta applies to each independently.
 function handleClick(effectId, delta) {
   if (selectedTokenIds.length === 0) return;
-  pending[effectId] = (pending[effectId] || 0) + delta;
+  const effect = EFFECTS.find((e) => e.id === effectId);
+  const key = `${effectId}:${fieldFor(effect)}`;
+  pendingDeltas[key] = (pendingDeltas[key] || 0) + delta;
   updateCountDisplays();
 
   clearTimeout(flushTimer);
@@ -172,20 +175,23 @@ function handleClick(effectId, delta) {
 
 async function flushNow() {
   clearTimeout(flushTimer);
-  if (selectedTokenIds.length === 0 || Object.keys(pending).length === 0) return;
+  if (selectedTokenIds.length === 0 || Object.keys(pendingDeltas).length === 0) return;
 
-  const deltas = { ...pending };
-  pending = {};
+  const deltas = { ...pendingDeltas };
+  pendingDeltas = {};
 
-  // updateItems hands us every selected item — each gets the SAME delta
-  // applied to its OWN current value, independently of the others.
   await OBR.scene.items.updateItems(selectedTokenIds, (items) => {
     for (const item of items) {
       const current = item.metadata[METADATA_KEY] || {};
-      const next = { ...current };
-      for (const [id, delta] of Object.entries(deltas)) {
-        const effect = EFFECTS.find((e) => e.id === id);
-        next[id] = clampCount(effect, (current[id] || 0) + delta);
+      const next = {};
+      for (const effect of EFFECTS) {
+        const cur = current[effect.id] || {};
+        next[effect.id] = { active: cur.active || 0, pending: cur.pending || 0 };
+      }
+      for (const [key, delta] of Object.entries(deltas)) {
+        const [effectId, field] = key.split(":");
+        const effect = EFFECTS.find((e) => e.id === effectId);
+        next[effectId][field] = clampCount(effect, next[effectId][field] + delta);
       }
       item.metadata[METADATA_KEY] = next;
     }
@@ -195,7 +201,7 @@ async function flushNow() {
 async function handleReset() {
   if (selectedTokenIds.length === 0) return;
   clearTimeout(flushTimer);
-  pending = {};
+  pendingDeltas = {};
 
   await OBR.scene.items.updateItems(selectedTokenIds, (items) => {
     for (const item of items) {
@@ -207,9 +213,46 @@ async function handleReset() {
   updateCountDisplays();
 }
 
+// Global — affects EVERY character token on the map, not just selected.
+// Order matters: decay whatever was already active FIRST, then promote
+// pending into active. That way an effect that just got promoted this
+// press survives until at least the NEXT End Turn, instead of being
+// wiped by the same click that activated it.
+async function handleEndTurn() {
+  const tokens = await OBR.scene.items.getItems(
+    (item) => item.layer === "CHARACTER" && isImage(item)
+  );
+  if (tokens.length === 0) return;
+  const ids = tokens.map((t) => t.id);
+
+  await OBR.scene.items.updateItems(ids, (items) => {
+    for (const item of items) {
+      const current = item.metadata[METADATA_KEY] || {};
+      const next = {};
+      for (const effect of EFFECTS) {
+        const cur = current[effect.id] || {};
+        let active = cur.active || 0;
+        let pend = cur.pending || 0;
+
+        if (effect.decay === "halve") active = Math.floor(active / 2);
+        else if (effect.decay === "clear") active = 0;
+
+        if (pend > 0) {
+          active = clampCount(effect, active + pend);
+          pend = 0;
+        }
+
+        next[effect.id] = { active, pending: pend };
+      }
+      item.metadata[METADATA_KEY] = next;
+    }
+  });
+}
+
 // ---------------------------------------------------------------------
-// Rebuilds the icon badges above each token. Only touches badges that
-// actually changed, so it can't loop on itself.
+// Rebuilds the badges above each token. One slot per EFFECT, not per
+// active/pending state — an effect with both gets a solid main number
+// plus a smaller translucent "+N" next to it, instead of two icons.
 // ---------------------------------------------------------------------
 async function reconcileBadges(items) {
   const tokens = items.filter((item) => item.layer === "CHARACTER" && isImage(item));
@@ -223,26 +266,34 @@ async function reconcileBadges(items) {
 
   for (const token of tokens) {
     const state = token.metadata[METADATA_KEY] || {};
-    const active = EFFECTS.filter((e) => (state[e.id] || 0) > 0);
+    const shown = EFFECTS.filter((e) => {
+      const s = state[e.id] || {};
+      return (s.active || 0) > 0 || (s.pending || 0) > 0;
+    });
     const existingForToken = ourBadges.filter((b) => b.attachedTo === token.id);
 
-    active.forEach((effect, index) => {
-      const count = state[effect.id];
-      // Each active effect is TWO items on the map: the icon and its
-      // count label, so they need to be checked/replaced as a pair.
+    shown.forEach((effect, index) => {
+      const s = state[effect.id] || {};
+      const active = s.active || 0;
+      const pend = s.pending || 0;
+      const expectedParts = active > 0 && pend > 0 ? 3 : 2;
+
       const parts = existingForToken.filter(
         (b) => b.metadata[BADGE_FLAG].effectId === effect.id
       );
-      const upToDate = parts.length === 2 && parts.every((p) => p.metadata[BADGE_FLAG].count === count);
+      const upToDate =
+        parts.length === expectedParts &&
+        parts.every(
+          (p) => p.metadata[BADGE_FLAG].active === active && p.metadata[BADGE_FLAG].pending === pend
+        );
       if (upToDate) return;
+
       toDelete.push(...parts.map((p) => p.id));
-      toAdd.push(...buildBadgePair(token, effect, count, index));
+      toAdd.push(...buildBadgeGroup(token, effect, { active, pending: pend }, index));
     });
 
     for (const badge of existingForToken) {
-      const stillWanted = active.some(
-        (e) => e.id === badge.metadata[BADGE_FLAG].effectId
-      );
+      const stillWanted = shown.some((e) => e.id === badge.metadata[BADGE_FLAG].effectId);
       if (!stillWanted) toDelete.push(badge.id);
     }
   }
@@ -251,15 +302,22 @@ async function reconcileBadges(items) {
   if (toAdd.length) await OBR.scene.items.addItems(toAdd);
 }
 
-function buildBadgePair(token, effect, count, index) {
+function buildBadgeGroup(token, effect, state, index) {
+  const { active, pending } = state;
   const badgeSize = gridDpi * BADGE_SCALE;
   const gap = badgeSize * BADGE_GAP_SCALE;
   const tokenWidth = token.width ?? gridDpi;
   const tokenHeight = token.height ?? gridDpi;
 
   const x = token.position.x - tokenWidth / 2 + index * (badgeSize + gap) + badgeSize / 2;
-  // Icon and number share this exact row — no vertical offset between them.
   const y = token.position.y - tokenHeight / 2 - badgeSize / 2 - badgeSize * ROW_HEIGHT_SCALE;
+
+  const hasActive = active > 0;
+  const mainCount = hasActive ? active : pending; // pending-only shows translucent
+  const mainOpacity = hasActive ? 1 : PENDING_OPACITY;
+  const showSecondary = hasActive && pending > 0;
+
+  const items = [];
 
   const icon = buildImage(
     {
@@ -272,23 +330,16 @@ function buildBadgePair(token, effect, count, index) {
   )
     .attachedTo(token.id)
     .position({ x, y })
+    .opacity(mainOpacity) // UNVERIFIED — see README note
     .locked(true)
     .disableHit(true)
-    .metadata({ [BADGE_FLAG]: { effectId: effect.id, count, part: "icon" } })
+    .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "icon" } })
     .build();
+  items.push(icon);
 
-  // Separate item just for the number, drawn as plain Text (not a
-  // Label/image-caption) so it scales with the map instead of staying
-  // a fixed screen size as you zoom. Uses richText, not plainText —
-  // plainText alone produced no visible output.
   const textBoxSize = badgeSize * 1.4;
-  const label = buildText()
-    .richText([
-      {
-        type: "paragraph",
-        children: [{ text: String(count) }],
-      },
-    ])
+  const mainLabel = buildText()
+    .richText([{ type: "paragraph", children: [{ text: String(mainCount) }] }])
     .width(textBoxSize)
     .height(textBoxSize)
     .textAlign("CENTER")
@@ -297,10 +348,31 @@ function buildBadgePair(token, effect, count, index) {
     .position({ x: x + badgeSize * 0.65, y })
     .fontSize(gridDpi * 0.09)
     .fillColor(COUNT_FONT_COLOR)
+    .opacity(mainOpacity) // UNVERIFIED — see README note
     .locked(true)
     .disableHit(true)
-    .metadata({ [BADGE_FLAG]: { effectId: effect.id, count, part: "count" } })
+    .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "count" } })
     .build();
+  items.push(mainLabel);
 
-  return [icon, label];
+  if (showSecondary) {
+    const secondary = buildText()
+      .richText([{ type: "paragraph", children: [{ text: `+${pending}` }] }])
+      .width(textBoxSize * 0.7)
+      .height(textBoxSize * 0.7)
+      .textAlign("CENTER")
+      .textAlignVertical("MIDDLE")
+      .attachedTo(token.id)
+      .position({ x: x + badgeSize * 1.15, y: y + badgeSize * 0.35 })
+      .fontSize(gridDpi * 0.06)
+      .fillColor(COUNT_FONT_COLOR)
+      .opacity(PENDING_OPACITY) // UNVERIFIED — see README note
+      .locked(true)
+      .disableHit(true)
+      .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "pendingCount" } })
+      .build();
+    items.push(secondary);
+  }
+
+  return items;
 }

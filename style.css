@@ -12,17 +12,22 @@ body {
   border-bottom: 1px solid #333;
   font-weight: 600;
 }
-#reset-btn {
-  display: block;
-  width: calc(100% - 16px);
-  margin: 8px;
+.button-row {
+  display: flex;
+  gap: 6px;
   padding: 8px;
-  background: #6b2b2b;
-  color: white;
+}
+.button-row button {
+  flex: 1;
+  padding: 8px;
   border: none;
   border-radius: 4px;
+  color: white;
   font-weight: 600;
   cursor: pointer;
+}
+#reset-btn {
+  background: #6b2b2b;
 }
 #reset-btn:hover:not(:disabled) {
   background: #833636;
@@ -30,6 +35,12 @@ body {
 #reset-btn:disabled {
   opacity: 0.35;
   cursor: default;
+}
+#end-turn-btn {
+  background: #2b4a6b;
+}
+#end-turn-btn:hover {
+  background: #365f87;
 }
 #effects {
   padding: 8px;
@@ -53,6 +64,11 @@ body {
 .effect-name {
   flex: 1;
 }
+.next-turn {
+  font-size: 11px;
+  color: #9aa0ac;
+  font-weight: 400;
+}
 .effect-row button {
   width: 26px;
   height: 26px;
@@ -71,8 +87,6 @@ body {
   text-align: center;
   font-weight: 700;
 }
-/* Hide the specific number when multiple tokens (with possibly
-   different counts) are selected — just "- +" remains. */
 #effects.multi-select .effect-count {
   display: none;
 }
