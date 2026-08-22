@@ -1,5 +1,5 @@
 // Loaded straight from a CDN so there's no npm/build step required.
-import OBR, { buildImage, buildText, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
+import OBR, { buildImage, buildText, buildShape, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
 
 const ID = "com.danielpm.statuseffects";
 const METADATA_KEY = `${ID}/effects`;
@@ -28,6 +28,8 @@ const FLUSH_DELAY_MS = 250; // how long clicking has to pause before we sync
 
 const COUNT_FONT_COLOR = "#ffffff"; // active
 const PENDING_FONT_COLOR = "#8a8f9c"; // pending-only — muted instead of translucent
+const DIM_OVERLAY_COLOR = "#000000"; // darkens a pending-only icon
+const DIM_OVERLAY_OPACITY = 0.55;
 
 let selectedTokenIds = []; // a list, not a single id — multi-select
 let gridDpi = 150;
@@ -162,6 +164,28 @@ function clampCount(effect, value) {
   return Math.max(0, Math.min(effect.max, value));
 }
 
+// Assigns a stable "order" to any effect that just became shown (active
+// or pending > 0) and doesn't have one yet, so it appends after whatever
+// is already there instead of jumping to a fixed catalog position.
+// Effects that drop back to fully zero lose their order, so if they
+// return later they re-append at the end rather than reusing a stale slot.
+function reconcileOrder(next) {
+  let maxOrder = -1;
+  for (const effect of EFFECTS) {
+    const s = next[effect.id];
+    const shown = s && ((s.active || 0) > 0 || (s.pending || 0) > 0);
+    if (shown && typeof s.order === "number") maxOrder = Math.max(maxOrder, s.order);
+  }
+  let nextOrder = maxOrder + 1;
+  for (const effect of EFFECTS) {
+    const s = next[effect.id];
+    if (!s) continue;
+    const shown = (s.active || 0) > 0 || (s.pending || 0) > 0;
+    if (shown && typeof s.order !== "number") s.order = nextOrder++;
+    else if (!shown) delete s.order;
+  }
+}
+
 function handleClick(effectId, delta) {
   if (selectedTokenIds.length === 0) return;
   const effect = EFFECTS.find((e) => e.id === effectId);
@@ -186,13 +210,14 @@ async function flushNow() {
       const next = {};
       for (const effect of EFFECTS) {
         const cur = current[effect.id] || {};
-        next[effect.id] = { active: cur.active || 0, pending: cur.pending || 0 };
+        next[effect.id] = { active: cur.active || 0, pending: cur.pending || 0, order: cur.order };
       }
       for (const [key, delta] of Object.entries(deltas)) {
         const [effectId, field] = key.split(":");
         const effect = EFFECTS.find((e) => e.id === effectId);
         next[effectId][field] = clampCount(effect, next[effectId][field] + delta);
       }
+      reconcileOrder(next);
       item.metadata[METADATA_KEY] = next;
     }
   });
@@ -242,8 +267,9 @@ async function handleEndTurn() {
           pend = 0;
         }
 
-        next[effect.id] = { active, pending: pend };
+        next[effect.id] = { active, pending: pend, order: cur.order };
       }
+      reconcileOrder(next);
       item.metadata[METADATA_KEY] = next;
     }
   });
@@ -269,6 +295,10 @@ async function reconcileBadges(items) {
     const shown = EFFECTS.filter((e) => {
       const s = state[e.id] || {};
       return (s.active || 0) > 0 || (s.pending || 0) > 0;
+    }).sort((a, b) => {
+      const oa = (state[a.id] || {}).order ?? 999;
+      const ob = (state[b.id] || {}).order ?? 999;
+      return oa - ob;
     });
     const existingForToken = ourBadges.filter((b) => b.attachedTo === token.id);
 
@@ -276,7 +306,9 @@ async function reconcileBadges(items) {
       const s = state[effect.id] || {};
       const active = s.active || 0;
       const pend = s.pending || 0;
-      const expectedParts = active > 0 && pend > 0 ? 3 : 2;
+      const showSecondary = active > 0 && pend > 0;
+      const showDim = active === 0 && pend > 0;
+      const expectedParts = 2 + (showSecondary || showDim ? 1 : 0);
 
       const parts = existingForToken.filter(
         (b) => b.metadata[BADGE_FLAG].effectId === effect.id
@@ -284,7 +316,10 @@ async function reconcileBadges(items) {
       const upToDate =
         parts.length === expectedParts &&
         parts.every(
-          (p) => p.metadata[BADGE_FLAG].active === active && p.metadata[BADGE_FLAG].pending === pend
+          (p) =>
+            p.metadata[BADGE_FLAG].active === active &&
+            p.metadata[BADGE_FLAG].pending === pend &&
+            p.metadata[BADGE_FLAG].index === index
         );
       if (upToDate) return;
 
@@ -315,6 +350,7 @@ function buildBadgeGroup(token, effect, state, index) {
   const hasActive = active > 0;
   const mainCount = hasActive ? active : pending; // pending-only shows in muted color
   const showSecondary = hasActive && pending > 0;
+  const showDim = !hasActive && pending > 0; // pending-only — dim the icon
 
   const items = [];
 
@@ -331,9 +367,29 @@ function buildBadgeGroup(token, effect, state, index) {
     .position({ x, y })
     .locked(true)
     .disableHit(true)
-    .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "icon" } })
+    .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, index, part: "icon" } })
     .build();
   items.push(icon);
+
+  // Images can't have opacity, so a pending-only icon gets a semi-
+  // transparent dark rectangle drawn over it instead — an approximation
+  // of "faded," using Shape's fillOpacity, which IS a real property.
+  if (showDim) {
+    const dim = buildShape()
+      .shapeType("RECTANGLE")
+      .width(badgeSize)
+      .height(badgeSize)
+      .position({ x: x - badgeSize / 2, y: y - badgeSize / 2 })
+      .fillColor(DIM_OVERLAY_COLOR)
+      .fillOpacity(DIM_OVERLAY_OPACITY)
+      .strokeOpacity(0)
+      .attachedTo(token.id)
+      .locked(true)
+      .disableHit(true)
+      .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, index, part: "dim" } })
+      .build();
+    items.push(dim);
+  }
 
   const textBoxSize = badgeSize * 1.4;
   const mainLabel = buildText()
@@ -343,12 +399,12 @@ function buildBadgeGroup(token, effect, state, index) {
     .textAlign("CENTER")
     .textAlignVertical("MIDDLE")
     .attachedTo(token.id)
-    .position({ x: x + badgeSize * 0.65, y })
+    .position({ x: x + badgeSize * 0.45, y })
     .fontSize(gridDpi * 0.09)
     .fillColor(hasActive ? COUNT_FONT_COLOR : PENDING_FONT_COLOR)
     .locked(true)
     .disableHit(true)
-    .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "count" } })
+    .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, index, part: "count" } })
     .build();
   items.push(mainLabel);
 
@@ -360,12 +416,12 @@ function buildBadgeGroup(token, effect, state, index) {
       .textAlign("CENTER")
       .textAlignVertical("MIDDLE")
       .attachedTo(token.id)
-      .position({ x: x + badgeSize * 1.15, y: y + badgeSize * 0.35 })
+      .position({ x: x + badgeSize * 0.95, y: y + badgeSize * 0.35 })
       .fontSize(gridDpi * 0.06)
       .fillColor(PENDING_FONT_COLOR)
       .locked(true)
       .disableHit(true)
-      .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, part: "pendingCount" } })
+      .metadata({ [BADGE_FLAG]: { effectId: effect.id, active, pending, index, part: "pendingCount" } })
       .build();
     items.push(secondary);
   }
