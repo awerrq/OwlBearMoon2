@@ -1,20 +1,28 @@
 # PM Status Effects — Owlbear Rodeo Extension
 
 ## What's new in this update
-- **Fixed a real positioning bug**: badges were slotted by fixed catalog
-  order, and an existing badge never got told to move when a new effect
-  pushed it over — that's why Burn was landing on top of Haste. Fixed by
-  tracking a stable "order" per effect on the token itself, assigned the
-  first time it becomes shown and cleared when it fully drops to zero —
-  so a slot is claimed once and stays put, new effects append at the end.
-- **Icon dimming for pending-only effects**: images can't have opacity
-  (confirmed, not available on any builder), so this uses a semi-
-  transparent dark rectangle drawn over the icon instead, via Shape's
-  `fillOpacity` — a real, confirmed property. This is new and unverified
-  in practice — if the overlay looks wrong (wrong position, wrong
-  layering, or just not there), tell me exactly what you see.
-- **Numbers moved closer to their icons** — was `badgeSize * 0.65` from
-  the icon's position, now `0.45`. Tune further if still not right.
+- **HP integration with Bubbles is live.** On End Turn, Burn deals
+  damage equal to its stack count (before halving) directly into
+  Bubbles' own HP fields — temp HP absorbs first, remainder spills into
+  HP. Confirmed metadata key from your actual live setup:
+  `com.owlbear-rodeo-bubbles-extension/metadata`, fields `health`,
+  `temporary health` (note the literal spaces in the names).
+- Only touches tokens that already have Bubbles data set up — won't
+  invent HP fields for a token the GM never configured.
+- HP is clamped at 0, not allowed to go negative. If you'd rather see
+  negative HP (e.g. for death-save tracking), that's a one-line change
+  in `handleEndTurn` — say so and I'll flip it.
+- **Fragile risk to know about**: this depends on Bubbles' internal
+  metadata format staying the same. If Seamus changes it in a future
+  Bubbles update, our write will silently stop working (or write to a
+  stale shape) until someone notices and we re-check it with the debug
+  button below.
+
+## Debug button
+Still present — `handleDebugPrint` in main.js, wired to the button in
+the panel. Useful for re-verifying the Bubbles schema if HP ever stops
+updating after a Bubbles update. Remove it once you're confident this
+is stable, or just leave it — it's harmless either way.
 
 ## Not done yet
 HP/damage integration with a health-bar extension (e.g. Bubbles) is a

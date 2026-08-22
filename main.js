@@ -5,6 +5,10 @@ const ID = "com.danielpm.statuseffects";
 const METADATA_KEY = `${ID}/effects`;
 const BADGE_FLAG = `${ID}/badge`;
 
+// Confirmed live from Bubbles' own metadata — note the literal spaces
+// in the field names, that's not a typo.
+const BUBBLES_KEY = "com.owlbear-rodeo-bubbles-extension/metadata";
+
 // ---------------------------------------------------------------------
 // EDIT THIS LIST to add, remove, or change effects.
 // timing: "immediate" applies the moment you click it (like Burn).
@@ -267,10 +271,16 @@ async function handleEndTurn() {
     for (const item of items) {
       const current = item.metadata[METADATA_KEY] || {};
       const next = {};
+      let burnDamage = 0;
+
       for (const effect of EFFECTS) {
         const cur = current[effect.id] || {};
         let active = cur.active || 0;
         let pend = cur.pending || 0;
+
+        // Damage uses the stack count BEFORE it halves, per the
+        // confirmed formula: damage = current stacks, then halve.
+        if (effect.id === "burn") burnDamage = active;
 
         if (effect.decay === "halve") active = Math.floor(active / 2);
         else if (effect.decay === "clear") active = 0;
@@ -284,6 +294,28 @@ async function handleEndTurn() {
       }
       reconcileOrder(next);
       item.metadata[METADATA_KEY] = next;
+
+      // Apply Burn damage to Bubbles' HP fields — temp HP absorbs
+      // first, remainder spills over to HP. Only touches tokens that
+      // already have Bubbles data; won't invent HP for a token the GM
+      // never set up in Bubbles.
+      if (burnDamage > 0 && item.metadata[BUBBLES_KEY]) {
+        const stats = { ...item.metadata[BUBBLES_KEY] };
+        let tempHp = stats["temporary health"] || 0;
+        let hp = stats["health"] || 0;
+
+        if (tempHp >= burnDamage) {
+          tempHp -= burnDamage;
+        } else {
+          const remaining = burnDamage - tempHp;
+          tempHp = 0;
+          hp = Math.max(0, hp - remaining);
+        }
+
+        stats["temporary health"] = tempHp;
+        stats["health"] = hp;
+        item.metadata[BUBBLES_KEY] = stats;
+      }
     }
   });
 }
