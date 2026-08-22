@@ -1,5 +1,5 @@
 // Loaded straight from a CDN so there's no npm/build step required.
-import OBR, { buildImage, buildText, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@2";
+import OBR, { buildImage, buildText, isImage } from "https://esm.sh/@owlbear-rodeo/sdk@3.1.0";
 
 const ID = "com.danielpm.statuseffects";
 const METADATA_KEY = `${ID}/effects`;
