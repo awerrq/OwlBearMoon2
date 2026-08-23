@@ -63,11 +63,66 @@ body {
 }
 .effect-name {
   flex: 1;
+  position: relative;
+  cursor: help;
+  border-bottom: 1px dotted #4a4e5e;
 }
-.next-turn {
-  font-size: 11px;
-  color: #9aa0ac;
+.effect-name[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: #14151b;
+  color: #e8e8e8;
+  padding: 6px 8px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+  width: 220px;
+  z-index: 20;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.section-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  font-weight: 700;
+  padding: 10px 4px 4px;
+}
+.now-btn {
+  font-size: 10px;
+  padding: 2px 6px;
+  border: 1px solid #4a4e5e;
+  border-radius: 3px;
+  background: transparent;
+  color: #8a8f9c;
+  cursor: pointer;
+  width: auto;
+  height: auto;
+}
+.now-btn:hover {
+  background: #2a2c36;
+  color: #e8e8e8;
+}
+.damage-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: #6b3b2b;
+  color: white;
+  cursor: pointer;
+  width: auto;
+  height: auto;
+  font-weight: 600;
+}
+.damage-btn:hover {
+  background: #874a36;
 }
 .effect-row button {
   width: 26px;

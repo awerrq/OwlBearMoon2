@@ -11,17 +11,78 @@ const BUBBLES_KEY = "com.owlbear-rodeo-bubbles-extension/metadata";
 
 // ---------------------------------------------------------------------
 // EDIT THIS LIST to add, remove, or change effects.
-// timing: "immediate" applies the moment you click it (like Burn).
-//         "delayed" queues as pending and only activates on End Turn.
-// decay:  what happens to the ACTIVE amount every time End Turn is
-//         pressed. "halve" rounds down, "clear" zeroes it, "none"
-//         leaves it untouched.
+// timing:       "immediate" applies the moment you click it (Burn, Bleed).
+//               "delayed" queues as pending, only activates on End Turn.
+// endTurnDecay: what the GLOBAL End Turn button does to the ACTIVE
+//               amount. "halve" rounds down, "clear" zeroes it, "none"
+//               leaves it untouched (Bleed isn't affected by End Turn
+//               at all — that's what "none" is for).
+// dealsDamage:  true if this effect gets its own "Apply Dmg" button —
+//               deals HP damage (via Bubbles) equal to the active
+//               count, then applies damageDecay. Selected tokens only,
+//               doesn't touch End Turn or any other effect.
+// damageDecay:  only used if dealsDamage is true — what the effect's
+//               OWN damage button does to its active count afterward.
+//               Can differ from endTurnDecay (Bleed halves on its own
+//               button, but ignores End Turn entirely).
+// description:  shown as a hover tooltip on the effect's name.
 // ---------------------------------------------------------------------
 const EFFECTS = [
-  { id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99, timing: "immediate", decay: "halve" },
-  { id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99, timing: "delayed", decay: "clear" },
-  { id: "power_down", name: "Power Down", icon: "icons/power_down.svg", max: 99, timing: "delayed", decay: "clear" },
-  { id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99, timing: "delayed", decay: "clear" },
+  {
+    id: "burn", name: "Burn", icon: "icons/burn.svg", max: 99,
+    timing: "immediate", endTurnDecay: "halve", dealsDamage: true, damageDecay: "halve",
+    description: "Deals HP damage equal to its stacks at the end of the round, then halves.",
+  },
+  {
+    id: "bleed", name: "Bleed", icon: "icons/bleed.svg", max: 99,
+    timing: "immediate", endTurnDecay: "none", dealsDamage: true, damageDecay: "halve",
+    description: "Deals HP damage equal to its stacks every time you take an Action or Reaction, then halves. Not affected by End Turn.",
+  },
+  {
+    id: "paralysis", name: "Paralysis", icon: "icons/paralysis.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "Your Actions and Reactions roll with disadvantage. Loses 1 stack per use (click -), clears fully at end of round.",
+  },
+  {
+    id: "fragile", name: "Fragile", icon: "icons/fragile.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "You take +1 extra damage from attacks per stack.",
+  },
+  {
+    id: "protection", name: "Protection", icon: "icons/protection.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "You take -1 less damage from attacks per stack.",
+  },
+  {
+    id: "strength", name: "Strength", icon: "icons/strength.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "+1 Power to your Offensive Dice per stack.",
+  },
+  {
+    id: "feeble", name: "Feeble", icon: "icons/feeble.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "-1 Power to your Offensive Dice per stack.",
+  },
+  {
+    id: "endurance", name: "Endurance", icon: "icons/endurance.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "+1 Power to your Defensive Dice per stack.",
+  },
+  {
+    id: "disarm", name: "Disarm", icon: "icons/disarm.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "-1 Power to your Defensive Dice per stack.",
+  },
+  {
+    id: "haste", name: "Haste", icon: "icons/haste.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "+1 SQR of movement per stack.",
+  },
+  {
+    id: "bind", name: "Bind", icon: "icons/bind.svg", max: 99,
+    timing: "delayed", endTurnDecay: "clear",
+    description: "-1 SQR of movement per stack.",
+  },
 ];
 
 const BADGE_SCALE = 0.14;
@@ -91,23 +152,63 @@ OBR.onReady(async () => {
 function renderEffectRows() {
   const root = document.getElementById("effects");
   root.innerHTML = "";
-  for (const effect of EFFECTS) {
-    const row = document.createElement("div");
-    row.className = "effect-row";
-    const hint = effect.timing === "delayed" ? ` <span class="next-turn">(next turn)</span>` : "";
-    row.innerHTML = `
-      <img class="effect-icon" src="${effect.icon}" alt="" />
-      <span class="effect-name">${effect.name}${hint}</span>
-      <button data-id="${effect.id}" data-delta="-1">-</button>
-      <span class="effect-count" id="count-${effect.id}">0</span>
-      <button data-id="${effect.id}" data-delta="1">+</button>
-    `;
-    root.appendChild(row);
+
+  const thisTurn = EFFECTS.filter((e) => e.timing !== "delayed");
+  const nextTurn = EFFECTS.filter((e) => e.timing === "delayed");
+
+  if (thisTurn.length > 0) {
+    root.appendChild(makeSectionHeader("This Turn"));
+    for (const effect of thisTurn) root.appendChild(makeEffectRow(effect));
   }
+  if (nextTurn.length > 0) {
+    root.appendChild(makeSectionHeader("Next Turn"));
+    for (const effect of nextTurn) root.appendChild(makeEffectRow(effect));
+  }
+
   root.addEventListener("click", (e) => {
-    if (e.target.tagName !== "BUTTON") return;
-    handleClick(e.target.dataset.id, parseInt(e.target.dataset.delta, 10));
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    if (btn.dataset.action === "delta") {
+      handleClick(btn.dataset.id, parseInt(btn.dataset.delta, 10));
+    } else if (btn.dataset.action === "now") {
+      handleApplyNow(btn.dataset.id);
+    } else if (btn.dataset.action === "damage") {
+      handleApplyEffectDamage(btn.dataset.id);
+    }
   });
+}
+
+function makeSectionHeader(title) {
+  const header = document.createElement("div");
+  header.className = "section-header";
+  header.textContent = title;
+  return header;
+}
+
+function makeEffectRow(effect) {
+  const row = document.createElement("div");
+  row.className = "effect-row";
+
+  // Small, deliberately unobtrusive — this gets used rarely.
+  const nowBtn =
+    effect.timing === "delayed"
+      ? `<button class="now-btn" data-action="now" data-id="${effect.id}" title="Apply this turn instead of next turn">now</button>`
+      : "";
+
+  const damageBtn = effect.dealsDamage
+    ? `<button class="damage-btn" data-action="damage" data-id="${effect.id}" title="Deal damage and apply decay now, selected tokens only">Apply Dmg</button>`
+    : "";
+
+  row.innerHTML = `
+    <img class="effect-icon" src="${effect.icon}" alt="" />
+    <span class="effect-name" data-tooltip="${effect.description || ""}">${effect.name}</span>
+    ${damageBtn}
+    ${nowBtn}
+    <button data-action="delta" data-id="${effect.id}" data-delta="-1">-</button>
+    <span class="effect-count" id="count-${effect.id}">0</span>
+    <button data-action="delta" data-id="${effect.id}" data-delta="1">+</button>
+  `;
+  return row;
 }
 
 async function loadSelection() {
@@ -200,6 +301,20 @@ function handleClick(effectId, delta) {
   flushTimer = setTimeout(flushNow, FLUSH_DELAY_MS);
 }
 
+// Override for a "delayed" effect — applies 1 stack directly to ACTIVE
+// instead of pending, bypassing the normal next-turn delay. Deliberately
+// doesn't show live feedback in this panel (the row's number here always
+// reflects pending, not active) — confirmation shows up as the badge on
+// the token itself. Rare enough that this is fine.
+function handleApplyNow(effectId) {
+  if (selectedTokenIds.length === 0) return;
+  const key = `${effectId}:active`;
+  pendingDeltas[key] = (pendingDeltas[key] || 0) + 1;
+
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flushNow, FLUSH_DELAY_MS);
+}
+
 async function flushNow() {
   clearTimeout(flushTimer);
   if (selectedTokenIds.length === 0 || Object.keys(pendingDeltas).length === 0) return;
@@ -240,6 +355,35 @@ async function handleDebugPrint() {
   }
 }
 
+// Deals damage for ONE effect (must have dealsDamage: true) and applies
+// its decay, for SELECTED tokens only — doesn't touch any other effect
+// and doesn't advance pending->active the way End Turn does. Flushes any
+// queued clicks first so a click right before this isn't silently lost.
+async function handleApplyEffectDamage(effectId) {
+  if (selectedTokenIds.length === 0) return;
+  await flushNow();
+
+  const effect = EFFECTS.find((e) => e.id === effectId);
+  if (!effect || !effect.dealsDamage) return;
+
+  await OBR.scene.items.updateItems(selectedTokenIds, (items) => {
+    for (const item of items) {
+      const current = item.metadata[METADATA_KEY] || {};
+      const state = current[effect.id] || {};
+      const activeAmount = state.active || 0;
+      if (activeAmount <= 0) continue;
+
+      applyBubblesDamage(item, activeAmount);
+
+      let newActive = activeAmount;
+      if (effect.damageDecay === "halve") newActive = Math.floor(activeAmount / 2);
+      else if (effect.damageDecay === "clear") newActive = 0;
+
+      item.metadata[METADATA_KEY] = { ...current, [effect.id]: { ...state, active: newActive } };
+    }
+  });
+}
+
 async function handleReset() {
   if (selectedTokenIds.length === 0) return;
   clearTimeout(flushTimer);
@@ -253,6 +397,28 @@ async function handleReset() {
 
   if (selectedTokenIds.length === 1) authoritative = {};
   updateCountDisplays();
+}
+
+// Applies HP damage to Bubbles' fields — temp HP absorbs first, then
+// spills into HP. Shared by End Turn and the per-effect damage buttons.
+// Only touches tokens that already have Bubbles data set up.
+function applyBubblesDamage(item, amount) {
+  if (amount <= 0 || !item.metadata[BUBBLES_KEY]) return;
+  const stats = { ...item.metadata[BUBBLES_KEY] };
+  let tempHp = stats["temporary health"] || 0;
+  let hp = stats["health"] || 0;
+
+  if (tempHp >= amount) {
+    tempHp -= amount;
+  } else {
+    const remaining = amount - tempHp;
+    tempHp = 0;
+    hp = Math.max(0, hp - remaining);
+  }
+
+  stats["temporary health"] = tempHp;
+  stats["health"] = hp;
+  item.metadata[BUBBLES_KEY] = stats;
 }
 
 // Global — affects EVERY character token on the map, not just selected.
@@ -282,8 +448,8 @@ async function handleEndTurn() {
         // confirmed formula: damage = current stacks, then halve.
         if (effect.id === "burn") burnDamage = active;
 
-        if (effect.decay === "halve") active = Math.floor(active / 2);
-        else if (effect.decay === "clear") active = 0;
+        if (effect.endTurnDecay === "halve") active = Math.floor(active / 2);
+        else if (effect.endTurnDecay === "clear") active = 0;
 
         if (pend > 0) {
           active = clampCount(effect, active + pend);
@@ -294,28 +460,7 @@ async function handleEndTurn() {
       }
       reconcileOrder(next);
       item.metadata[METADATA_KEY] = next;
-
-      // Apply Burn damage to Bubbles' HP fields — temp HP absorbs
-      // first, remainder spills over to HP. Only touches tokens that
-      // already have Bubbles data; won't invent HP for a token the GM
-      // never set up in Bubbles.
-      if (burnDamage > 0 && item.metadata[BUBBLES_KEY]) {
-        const stats = { ...item.metadata[BUBBLES_KEY] };
-        let tempHp = stats["temporary health"] || 0;
-        let hp = stats["health"] || 0;
-
-        if (tempHp >= burnDamage) {
-          tempHp -= burnDamage;
-        } else {
-          const remaining = burnDamage - tempHp;
-          tempHp = 0;
-          hp = Math.max(0, hp - remaining);
-        }
-
-        stats["temporary health"] = tempHp;
-        stats["health"] = hp;
-        item.metadata[BUBBLES_KEY] = stats;
-      }
+      applyBubblesDamage(item, burnDamage);
     }
   });
 }
