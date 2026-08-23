@@ -121,32 +121,60 @@ async function scheduleReconcile(items) {
   }
 }
 
-OBR.onReady(async () => {
-  gridDpi = await OBR.scene.grid.getDpi();
+let sceneUnsubPlayer = null;
+let sceneUnsubItems = null;
 
+OBR.onReady(() => {
+  // Things that don't need a loaded scene can run immediately.
   renderEffectRows();
   document.getElementById("reset-btn").addEventListener("click", handleReset);
   document.getElementById("end-turn-btn").addEventListener("click", handleEndTurn);
   document.getElementById("debug-btn").addEventListener("click", handleDebugPrint);
-  await loadSelection();
 
-  OBR.player.onChange(async () => {
-    await flushNow();
-    await loadSelection();
-  });
+  // Everything scene-dependent (grid info, tokens, metadata) waits for
+  // an ACTUAL scene, not just the extension connecting. onReady firing
+  // doesn't guarantee a scene is loaded yet — right after a page
+  // reload there's a real gap where it isn't, which is what was
+  // throwing "MissingDataError: No scene found" and silently killing
+  // the rest of setup, leaving the panel stuck on "Loading...".
+  OBR.scene.onReadyChange(async (ready) => {
+    if (sceneUnsubPlayer) { sceneUnsubPlayer(); sceneUnsubPlayer = null; }
+    if (sceneUnsubItems) { sceneUnsubItems(); sceneUnsubItems = null; }
 
-  OBR.scene.items.onChange(async (items) => {
-    scheduleReconcile(items);
-    if (selectedTokenIds.length === 1) {
-      const token = items.find((i) => i.id === selectedTokenIds[0]);
-      if (token) {
-        authoritative = token.metadata[METADATA_KEY] || {};
-        updateCountDisplays();
-      }
+    if (!ready) {
+      document.getElementById("banner").textContent = "Waiting for scene...";
+      document.getElementById("effects").classList.add("disabled");
+      return;
+    }
+
+    try {
+      gridDpi = await OBR.scene.grid.getDpi();
+      await loadSelection();
+
+      sceneUnsubPlayer = OBR.player.onChange(async () => {
+        await flushNow();
+        await loadSelection();
+      });
+
+      sceneUnsubItems = OBR.scene.items.onChange(async (items) => {
+        scheduleReconcile(items);
+        if (selectedTokenIds.length === 1) {
+          const token = items.find((i) => i.id === selectedTokenIds[0]);
+          if (token) {
+            authoritative = token.metadata[METADATA_KEY] || {};
+            updateCountDisplays();
+          }
+        }
+      });
+
+      scheduleReconcile(await OBR.scene.items.getItems());
+    } catch (err) {
+      // If anything else unexpected goes wrong, show it instead of
+      // hanging silently on "Loading..." forever.
+      console.error("[status-effects] scene init failed:", err);
+      document.getElementById("banner").textContent = "Error loading — check console";
     }
   });
-
-  scheduleReconcile(await OBR.scene.items.getItems());
 });
 
 function renderEffectRows() {

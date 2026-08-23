@@ -1,28 +1,28 @@
 # PM Status Effects — Owlbear Rodeo Extension
 
 ## What's new in this update
-- **Full 11-effect catalog**: Burn, Bleed, Paralysis, Fragile,
-  Protection, Strength, Feeble, Endurance, Disarm, Haste, Bind.
-- **`decay` split into `endTurnDecay` and `damageDecay`** — needed
-  because Bleed halves on its own damage button but is completely
-  untouched by End Turn, which one shared field couldn't express.
-- **Bleed gets its own "Apply Dmg" button**, same mechanism as Burn's,
-  built generically — selected tokens only, doesn't touch End Turn.
-- **Hover tooltips** on every effect name, showing the exact rules text
-  you gave me. Pure CSS, no JavaScript, so this doesn't touch anything
-  Owlbear-specific — lowest-risk change in this whole project so far.
-- **Paralysis needed zero new code** — it reuses the existing "now"
-  button (apply immediately) and the existing "-" button (lose 1 stack
-  per use) exactly as-is.
+- **Fixed the real cause of the stuck "Loading..." on reload.** Console
+  showed `MissingDataError: No scene found` — confirmed via Owlbear's
+  own docs that `OBR.onReady()` (extension connected) and
+  `OBR.scene.onReadyChange()` (an actual scene loaded) are different
+  things. Right after a page reload there's a real gap where the first
+  is true and the second isn't yet, and the code was calling
+  scene-dependent APIs immediately without waiting for the second one.
+  Now properly waits for `OBR.scene.onReadyChange`, and re-subscribes
+  cleanly if the scene changes or becomes unavailable later.
+- **Errors now show up instead of hanging silently.** If scene setup
+  fails for any other reason, the banner says "Error loading — check
+  console" instead of sitting on "Loading..." forever with no clue why.
 
-## Icon files you still need to add
-These effects don't have artwork yet and will show broken images until
-you add matching SVGs to your `icons/` folder:
-`bleed.svg`, `paralysis.svg`, `protection.svg`, `strength.svg`,
-`endurance.svg`, `disarm.svg`, `bind.svg`
-
-`feeble.svg` can just be a copy of your existing `power_down.svg` if
-you want to keep that art — it's a straight rename.
+## Font size issue — need more info to fix this
+Noted, but I don't have enough to act on yet — since the extension's
+been fighting you on loading, it's hard to tell if what you saw was a
+real styling bug or just the broken-loading state showing stale/partial
+content. Once this fix is confirmed working, if something still looks
+off size-wise, tell me exactly which text (tooltip? effect names?
+badge numbers on the map?) and roughly how it's wrong (too big, too
+small, inconsistent between two things that should match) — I'd rather
+fix the real thing than guess and add noise.
 
 ## Debug button
 Still present — useful for re-verifying the Bubbles schema if a future
