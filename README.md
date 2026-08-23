@@ -1,28 +1,28 @@
 # PM Status Effects — Owlbear Rodeo Extension
 
 ## What's new in this update
-- **Fixed the real cause of the stuck "Loading..." on reload.** Console
-  showed `MissingDataError: No scene found` — confirmed via Owlbear's
-  own docs that `OBR.onReady()` (extension connected) and
-  `OBR.scene.onReadyChange()` (an actual scene loaded) are different
-  things. Right after a page reload there's a real gap where the first
-  is true and the second isn't yet, and the code was calling
-  scene-dependent APIs immediately without waiting for the second one.
-  Now properly waits for `OBR.scene.onReadyChange`, and re-subscribes
-  cleanly if the scene changes or becomes unavailable later.
-- **Errors now show up instead of hanging silently.** If scene setup
-  fails for any other reason, the banner says "Error loading — check
-  console" instead of sitting on "Loading..." forever with no clue why.
+- **Paralysis (and any delayed effect) is now fully correctable.** Every
+  Next Turn effect gets a second, smaller row underneath it: `now  - [n] +`
+  — a real bidirectional control on the ACTIVE count, not the old
+  one-way "now" button that could only add. The main row above it still
+  controls pending (next turn) as before.
+- **Button text**: "Apply Dmg" → "Dmg", and it now matches the "now"
+  row's small font size instead of being noticeably bigger.
+- **Full CRT-terminal restyle** — black background, monospace font,
+  green terminal palette, sharp bordered icon boxes, no rounded pill
+  buttons. Pulled from your reference image's *style* (palette, font,
+  border treatment) — not its layout or content.
+- **Scrollbar hidden, scrolling still works.** The effects list is its
+  own scrollable region now (banner and buttons stay fixed at the top),
+  with the scrollbar itself hidden via CSS rather than disabled —
+  mouse wheel, trackpad, and touch drag all still scroll it normally.
 
-## Font size issue — need more info to fix this
-Noted, but I don't have enough to act on yet — since the extension's
-been fighting you on loading, it's hard to tell if what you saw was a
-real styling bug or just the broken-loading state showing stale/partial
-content. Once this fix is confirmed working, if something still looks
-off size-wise, tell me exactly which text (tooltip? effect names?
-badge numbers on the map?) and roughly how it's wrong (too big, too
-small, inconsistent between two things that should match) — I'd rather
-fix the real thing than guess and add noise.
+## Font size — flag this one specifically
+I don't have a live view, so the terminal font sizing (13px body, 11px
+buttons, 10px for now-row controls) is a first-pass guess at
+"readable but compact." If anything's still off after this, tell me
+exactly which text and I'll adjust the specific value rather than
+rebalancing everything again.
 
 ## Debug button
 Still present — useful for re-verifying the Bubbles schema if a future
@@ -37,6 +37,8 @@ above it for what each field does — `timing`, `endTurnDecay`,
 ## Tuning constants (all near the top of main.js)
 - `BADGE_SCALE`, `BADGE_GAP_SCALE`, `ROW_HEIGHT_SCALE`, `ICON_PX`
 - `PENDING_FONT_COLOR` — the muted color used for pending-only numbers
+  on the MAP badges (separate from the popover's terminal colors, which
+  live in style.css)
 
 ## Deploying an update
 1. Replace the changed file(s) on GitHub, commit to `main`.

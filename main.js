@@ -197,9 +197,7 @@ function renderEffectRows() {
     const btn = e.target.closest("button");
     if (!btn) return;
     if (btn.dataset.action === "delta") {
-      handleClick(btn.dataset.id, parseInt(btn.dataset.delta, 10));
-    } else if (btn.dataset.action === "now") {
-      handleApplyNow(btn.dataset.id);
+      handleClick(btn.dataset.id, btn.dataset.field, parseInt(btn.dataset.delta, 10));
     } else if (btn.dataset.action === "damage") {
       handleApplyEffectDamage(btn.dataset.id);
     }
@@ -214,29 +212,43 @@ function makeSectionHeader(title) {
 }
 
 function makeEffectRow(effect) {
-  const row = document.createElement("div");
-  row.className = "effect-row";
+  const wrapper = document.createElement("div");
+  wrapper.className = "effect-block";
 
-  // Small, deliberately unobtrusive — this gets used rarely.
-  const nowBtn =
-    effect.timing === "delayed"
-      ? `<button class="now-btn" data-action="now" data-id="${effect.id}" title="Apply this turn instead of next turn">now</button>`
-      : "";
+  const mainField = effect.timing === "delayed" ? "pending" : "active";
 
   const damageBtn = effect.dealsDamage
-    ? `<button class="damage-btn" data-action="damage" data-id="${effect.id}" title="Deal damage and apply decay now, selected tokens only">Apply Dmg</button>`
+    ? `<button class="damage-btn" data-action="damage" data-id="${effect.id}" title="Deal damage and apply decay now, selected tokens only">Dmg</button>`
     : "";
 
-  row.innerHTML = `
+  const mainRow = document.createElement("div");
+  mainRow.className = "effect-row";
+  mainRow.innerHTML = `
     <img class="effect-icon" src="${effect.icon}" alt="" />
     <span class="effect-name" data-tooltip="${effect.description || ""}">${effect.name}</span>
     ${damageBtn}
-    ${nowBtn}
-    <button data-action="delta" data-id="${effect.id}" data-delta="-1">-</button>
-    <span class="effect-count" id="count-${effect.id}">0</span>
-    <button data-action="delta" data-id="${effect.id}" data-delta="1">+</button>
+    <button data-action="delta" data-field="${mainField}" data-id="${effect.id}" data-delta="-1">-</button>
+    <span class="effect-count" id="count-${effect.id}-${mainField}">0</span>
+    <button data-action="delta" data-field="${mainField}" data-id="${effect.id}" data-delta="1">+</button>
   `;
-  return row;
+  wrapper.appendChild(mainRow);
+
+  // Delayed effects get a second, smaller row for adjusting ACTIVE
+  // directly — bidirectional (+/-), not just an "apply now" one-shot,
+  // so an accidentally-promoted stack (e.g. Paralysis) can be corrected.
+  if (effect.timing === "delayed") {
+    const nowRow = document.createElement("div");
+    nowRow.className = "now-row";
+    nowRow.innerHTML = `
+      <span class="now-label">now</span>
+      <button class="now-btn" data-action="delta" data-field="active" data-id="${effect.id}" data-delta="-1">-</button>
+      <span class="effect-count now-count" id="count-${effect.id}-active">0</span>
+      <button class="now-btn" data-action="delta" data-field="active" data-id="${effect.id}" data-delta="1">+</button>
+    `;
+    wrapper.appendChild(nowRow);
+  }
+
+  return wrapper;
 }
 
 async function loadSelection() {
@@ -272,23 +284,23 @@ async function loadSelection() {
   updateCountDisplays();
 }
 
-// Each effect edits ONE field depending on its timing: immediate effects
-// edit "active" directly, delayed effects always edit "pending".
-function fieldFor(effect) {
-  return effect.timing === "delayed" ? "pending" : "active";
-}
-
 function updateCountDisplays() {
   const isMulti = selectedTokenIds.length > 1;
   document.getElementById("effects").classList.toggle("multi-select", isMulti);
   if (isMulti) return; // no single shared number to show
 
   for (const effect of EFFECTS) {
-    const field = fieldFor(effect);
-    const base = (authoritative[effect.id] || {})[field] || 0;
-    const delta = pendingDeltas[`${effect.id}:${field}`] || 0;
-    const el = document.getElementById(`count-${effect.id}`);
-    if (el) el.textContent = clampCount(effect, base + delta);
+    const state = authoritative[effect.id] || {};
+
+    const activeBase = state.active || 0;
+    const activeDelta = pendingDeltas[`${effect.id}:active`] || 0;
+    const activeEl = document.getElementById(`count-${effect.id}-active`);
+    if (activeEl) activeEl.textContent = clampCount(effect, activeBase + activeDelta);
+
+    const pendingBase = state.pending || 0;
+    const pendingDelta = pendingDeltas[`${effect.id}:pending`] || 0;
+    const pendingEl = document.getElementById(`count-${effect.id}-pending`);
+    if (pendingEl) pendingEl.textContent = clampCount(effect, pendingBase + pendingDelta);
   }
 }
 
@@ -318,26 +330,11 @@ function reconcileOrder(next) {
   }
 }
 
-function handleClick(effectId, delta) {
+function handleClick(effectId, field, delta) {
   if (selectedTokenIds.length === 0) return;
-  const effect = EFFECTS.find((e) => e.id === effectId);
-  const key = `${effectId}:${fieldFor(effect)}`;
+  const key = `${effectId}:${field}`;
   pendingDeltas[key] = (pendingDeltas[key] || 0) + delta;
   updateCountDisplays();
-
-  clearTimeout(flushTimer);
-  flushTimer = setTimeout(flushNow, FLUSH_DELAY_MS);
-}
-
-// Override for a "delayed" effect — applies 1 stack directly to ACTIVE
-// instead of pending, bypassing the normal next-turn delay. Deliberately
-// doesn't show live feedback in this panel (the row's number here always
-// reflects pending, not active) — confirmation shows up as the badge on
-// the token itself. Rare enough that this is fine.
-function handleApplyNow(effectId) {
-  if (selectedTokenIds.length === 0) return;
-  const key = `${effectId}:active`;
-  pendingDeltas[key] = (pendingDeltas[key] || 0) + 1;
 
   clearTimeout(flushTimer);
   flushTimer = setTimeout(flushNow, FLUSH_DELAY_MS);
