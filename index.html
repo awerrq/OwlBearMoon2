@@ -11,7 +11,22 @@
     <button id="reset-btn" disabled>Reset Selected</button>
     <button id="end-turn-btn">End Turn (All Tokens)</button>
   </div>
+  <div class="tab-row">
+    <button class="tab active" data-tab="effects">Effects</button>
+    <button class="tab" data-tab="damage">Damage</button>
+  </div>
   <div id="effects" class="disabled"></div>
+  <div id="damage" class="disabled hidden">
+    <div class="section-header">Deal damage</div>
+    <div class="damage-row">
+      <input id="damage-amount" type="number" min="1" step="1" placeholder="0" />
+      <select id="damage-type"></select>
+      <button id="damage-apply">Apply</button>
+    </div>
+    <div id="damage-result"></div>
+    <div class="section-header">Resistances (selected)</div>
+    <div id="resist-grid"></div>
+  </div>
   <button id="debug-btn">Debug: Print Selected Token's Metadata</button>
   <script type="module" src="main.js"></script>
 </body>

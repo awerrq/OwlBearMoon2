@@ -9,6 +9,17 @@ const BADGE_FLAG = `${ID}/badge`;
 // in the field names, that's not a typo.
 const BUBBLES_KEY = "com.owlbear-rodeo-bubbles-extension/metadata";
 
+// Per-token damage multipliers, saved on the token itself. Own key on
+// purpose: "Reset Selected" only wipes METADATA_KEY, so resistances
+// (a permanent trait) survive a reset.
+const RESIST_KEY = `${ID}/resist`;
+const DAMAGE_TYPES = [
+  { id: "slash", name: "Slash" },
+  { id: "pierce", name: "Pierce" },
+  { id: "blunt", name: "Blunt" },
+];
+const RESIST_VALUES = [0, 0.25, 0.5, 1, 1.5, 2];
+
 // ---------------------------------------------------------------------
 // EDIT THIS LIST to add, remove, or change effects.
 // timing:       "immediate" applies the moment you click it (Burn, Bleed).
@@ -127,9 +138,17 @@ let sceneUnsubItems = null;
 OBR.onReady(() => {
   // Things that don't need a loaded scene can run immediately.
   renderEffectRows();
+  renderDamagePanel();
   document.getElementById("reset-btn").addEventListener("click", handleReset);
   document.getElementById("end-turn-btn").addEventListener("click", handleEndTurn);
   document.getElementById("debug-btn").addEventListener("click", handleDebugPrint);
+  document.getElementById("damage-apply").addEventListener("click", handleApplyTypedDamage);
+  document.getElementById("damage-amount").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleApplyTypedDamage();
+  });
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.addEventListener("click", () => showTab(tab.dataset.tab));
+  }
 
   // Everything scene-dependent (grid info, tokens, metadata) waits for
   // an ACTUAL scene, not just the extension connecting. onReady firing
@@ -143,7 +162,7 @@ OBR.onReady(() => {
 
     if (!ready) {
       document.getElementById("banner").textContent = "Waiting for scene...";
-      document.getElementById("effects").classList.add("disabled");
+      setPanelsDisabled(true);
       return;
     }
 
@@ -164,6 +183,9 @@ OBR.onReady(() => {
             authoritative = token.metadata[METADATA_KEY] || {};
             updateCountDisplays();
           }
+        }
+        if (selectedTokenIds.length > 0) {
+          refreshResistDisplay(items.filter((i) => selectedTokenIds.includes(i.id)));
         }
       });
 
@@ -256,12 +278,11 @@ async function loadSelection() {
   selectedTokenIds = selection || [];
 
   const banner = document.getElementById("banner");
-  const panel = document.getElementById("effects");
   const resetBtn = document.getElementById("reset-btn");
 
   if (selectedTokenIds.length === 0) {
     banner.textContent = "Select one or more tokens";
-    panel.classList.add("disabled");
+    setPanelsDisabled(true);
     resetBtn.disabled = true;
     authoritative = {};
     pendingDeltas = {};
@@ -269,7 +290,7 @@ async function loadSelection() {
     return;
   }
 
-  panel.classList.remove("disabled");
+  setPanelsDisabled(false);
   resetBtn.disabled = false;
 
   if (selectedTokenIds.length === 1) {
@@ -282,6 +303,7 @@ async function loadSelection() {
   }
   pendingDeltas = {};
   updateCountDisplays();
+  await refreshResistDisplay();
 }
 
 function updateCountDisplays() {
@@ -409,6 +431,119 @@ async function handleApplyEffectDamage(effectId) {
   });
 }
 
+// ---------------------------------------------------------------------
+// Damage tab: typed damage with per-token resistances.
+// ---------------------------------------------------------------------
+function setPanelsDisabled(disabled) {
+  document.getElementById("effects").classList.toggle("disabled", disabled);
+  document.getElementById("damage").classList.toggle("disabled", disabled);
+}
+
+function showTab(name) {
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.classList.toggle("active", tab.dataset.tab === name);
+  }
+  document.getElementById("effects").classList.toggle("hidden", name !== "effects");
+  document.getElementById("damage").classList.toggle("hidden", name !== "damage");
+}
+
+function renderDamagePanel() {
+  document.getElementById("damage-type").innerHTML = DAMAGE_TYPES.map(
+    (t) => `<option value="${t.id}">${t.name}</option>`
+  ).join("");
+
+  const grid = document.getElementById("resist-grid");
+  grid.innerHTML = DAMAGE_TYPES.map(
+    (t) => `
+    <label class="resist-cell">
+      <span class="resist-label">${t.name}</span>
+      <select data-resist="${t.id}">
+        <option value="mixed" disabled>—</option>
+        ${RESIST_VALUES.map((v) => `<option value="${v}">${v}x</option>`).join("")}
+      </select>
+    </label>`
+  ).join("");
+
+  for (const sel of grid.querySelectorAll("select")) sel.value = "1";
+
+  grid.addEventListener("change", (e) => {
+    const sel = e.target.closest("select[data-resist]");
+    if (sel) handleResistChange(sel.dataset.resist, sel.value);
+  });
+}
+
+// Shows each type's multiplier for the selected token(s); "—" if the
+// selected tokens don't all share the same value.
+async function refreshResistDisplay(items) {
+  if (selectedTokenIds.length === 0) return;
+  const tokens = items ?? (await OBR.scene.items.getItems(selectedTokenIds));
+  for (const t of DAMAGE_TYPES) {
+    const values = new Set(tokens.map((tok) => (tok.metadata[RESIST_KEY] || {})[t.id] ?? 1));
+    const next = values.size === 1 ? String([...values][0]) : "mixed";
+    const sel = document.querySelector(`select[data-resist="${t.id}"]`);
+    if (sel && sel.value !== next) sel.value = next;
+  }
+}
+
+// Sets one damage type's multiplier on every selected token.
+async function handleResistChange(typeId, rawValue) {
+  if (selectedTokenIds.length === 0) return;
+  const value = parseFloat(rawValue);
+  if (!RESIST_VALUES.includes(value)) return;
+
+  await OBR.scene.items.updateItems(selectedTokenIds, (items) => {
+    for (const item of items) {
+      item.metadata[RESIST_KEY] = { ...(item.metadata[RESIST_KEY] || {}), [typeId]: value };
+    }
+  });
+}
+
+// Deals typed damage to every selected token. Per token:
+//   ceil(amount x that token's multiplier for the type)
+//   + active Fragile stacks - active Protection stacks, floored at 0.
+// A 0x multiplier means immune: stays 0, Fragile/Protection don't apply.
+async function handleApplyTypedDamage() {
+  if (selectedTokenIds.length === 0) return;
+  const out = document.getElementById("damage-result");
+  const amount = parseInt(document.getElementById("damage-amount").value, 10);
+  const typeId = document.getElementById("damage-type").value;
+  const typeName = (DAMAGE_TYPES.find((t) => t.id === typeId) || {}).name || typeId;
+
+  if (!(amount > 0)) {
+    out.textContent = "Enter a damage number above 0.";
+    return;
+  }
+
+  const results = [];
+  await OBR.scene.items.updateItems(selectedTokenIds, (items) => {
+    results.length = 0; // in case the updater ever runs more than once
+    for (const item of items) {
+      const mult = (item.metadata[RESIST_KEY] || {})[typeId] ?? 1;
+      const effects = item.metadata[METADATA_KEY] || {};
+      const fragile = (effects.fragile || {}).active || 0;
+      const protection = (effects.protection || {}).active || 0;
+
+      let dealt = 0;
+      const notes = [];
+      if (mult !== 0) {
+        dealt = Math.max(0, Math.ceil(amount * mult) + fragile - protection);
+        if (fragile) notes.push(`+${fragile} Fragile`);
+        if (protection) notes.push(`-${protection} Protection`);
+      }
+
+      const hasHp = applyBubblesDamage(item, dealt);
+      results.push({ name: item.name || "Unnamed", dealt, notes, hasHp });
+    }
+  });
+
+  const parts = results.map((r) => {
+    if (!r.hasHp) return `${r.name} (no HP set)`;
+    const note = r.notes.length ? ` (${r.notes.join(", ")})` : "";
+    return `${r.name} ${r.dealt}${note}`;
+  });
+  out.textContent = `${amount} ${typeName}: ${parts.join(" · ")}`;
+}
+
 async function handleReset() {
   if (selectedTokenIds.length === 0) return;
   clearTimeout(flushTimer);
@@ -427,8 +562,11 @@ async function handleReset() {
 // Applies HP damage to Bubbles' fields — temp HP absorbs first, then
 // spills into HP. Shared by End Turn and the per-effect damage buttons.
 // Only touches tokens that already have Bubbles data set up.
+// Returns true if the token has Bubbles HP data (even when the amount is
+// 0), false if it has none — so callers can tell "no damage" from "no HP".
 function applyBubblesDamage(item, amount) {
-  if (amount <= 0 || !item.metadata[BUBBLES_KEY]) return;
+  if (!item.metadata[BUBBLES_KEY]) return false;
+  if (amount <= 0) return true;
   const stats = { ...item.metadata[BUBBLES_KEY] };
   let tempHp = stats["temporary health"] || 0;
   let hp = stats["health"] || 0;
@@ -444,6 +582,7 @@ function applyBubblesDamage(item, amount) {
   stats["temporary health"] = tempHp;
   stats["health"] = hp;
   item.metadata[BUBBLES_KEY] = stats;
+  return true;
 }
 
 // Global — affects EVERY character token on the map, not just selected.
